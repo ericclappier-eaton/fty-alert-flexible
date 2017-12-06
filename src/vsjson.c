@@ -491,9 +491,16 @@ char *vsjson_decode_string (const char *string)
 
 char *vsjson_encode_string (const char *string)
 {
+    if (!string)
+        return NULL;
+    return vsjson_encode_nstring(string, strlen(string));
+}
+
+char *vsjson_encode_nstring (const char *string, size_t len)
+{
     if (!string) return NULL;
 
-    int capacity = strlen (string) + 15;
+    int capacity = len + 15;
     int index = 1;
     const char *p = string;
 
@@ -501,7 +508,7 @@ char *vsjson_encode_string (const char *string)
     if (!encoded) return NULL;
     memset (encoded, 0, capacity);
     encoded[0] = '"';
-    while (*p) {
+    while (*p && p - string < len) {
         switch (*p) {
         case '"':
         case '\\':
@@ -536,7 +543,7 @@ char *vsjson_encode_string (const char *string)
         }
         p++;
         if (capacity - index < 10) {
-            int add = strlen (p) + 15;
+            int add = len - (p - string) + 15;
             char *ne = (char *) realloc (encoded, capacity + add);
             if (ne) {
                 encoded = ne;

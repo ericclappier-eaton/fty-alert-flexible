@@ -6,8 +6,8 @@
     "models"        : [ ],
     "groups"        : ["all-upses"],
     "results"       :  {
-        "high_critical"  : { "action" : ["EMAIL","SMS"] },
-        "high_warning"  : { "action" : ["EMAIL"] }
+        "high_critical"  : { "action" : [{"action": "EMAIL"}, {"action": "SMS"}] },
+        "high_warning"  : { "action" : [{"action": "EMAIL"}] }
     },
     "evaluation"    : "
          function has_bit(x,bit)

@@ -17,6 +17,7 @@ extern "C" {
 
 #define VSJSON_SEPARATOR '/'
 #include <stdbool.h>
+#include <stddef.h>
 
 //  Opaque class structures to allow forward references
 #ifndef VSJSON_T_DEFINED
@@ -58,6 +59,8 @@ int vsjson_parse (const char *json, vsjson_callback_t *func, void *data, bool ca
 char *vsjson_decode_string (const char *string);
 
 char *vsjson_encode_string (const char *string);
+
+char *vsjson_encode_nstring (const char *string, size_t len);
 
 #ifdef __cplusplus
 }

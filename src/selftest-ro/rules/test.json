@@ -1,0 +1,13 @@
+{
+"name":"test",
+"description":"this is a test rule",
+"logical_asset":"",
+"metrics":["load.default"],
+"assets":["UPS1"],
+"models":[],
+"groups":[],
+"results": {
+"low_critical": {"action": [{"action": "SMS"}, {"action": "EMAIL"}, {"action": "GPO_INTERACTION", "asset": "gpo-42", "mode": "close"}]},
+"high_critical": {"action": [{"action": "EMAIL"}, {"action": "SMS"}, {"action": "GPO_INTERACTION", "asset": "gpo-42", "mode": "open"}]}},
+"evaluation":"\n         function main(load)\n             if load > 90 then\n                 return HIGH_CRITICAL, NAME .. ' is overloaded (' .. load .. '%);\n             end\n             if load > 70 then\n                 return HIGH_WARNING, NAME .. ' is overloaded (' .. load .. '%);\n             end\n             return OK, 'Load on ' .. NAME ..  ' is within limit (' .. load .. '%)';\n         end\n    "
+}

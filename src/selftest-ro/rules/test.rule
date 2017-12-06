@@ -1,14 +1,21 @@
 { "flexible":
 {
-    "name"          : "load",
-    "description"   : "Device load",
+    "name"          : "test",
+    "description"   : "this is a test rule",
     "metrics"       : ["load.default"],
     "assets"        : ["UPS1"],
     "groups"        : [ ],
     "models"        : [ ],
     "results"       :  {
-        "high_critical"  : { "action" : [{"action": "EMAIL"}, {"action": "SMS"}] },
-        "high_warning"  : { "action" : [ ] }
+        "high_critical"  : { "action" : [
+            {"action": "EMAIL"},
+            {"action": "SMS"},
+            {"action": "GPO_INTERACTION", "asset": "gpo-42", "mode": "open"}] },
+        "high_warning"  : { "action" : [ ] },
+        "low_critical": { "action" : [
+            {"action": "SMS"},
+            {"action": "EMAIL"},
+            {"asset": "gpo-42", "action": "GPO_INTERACTION", "mode": "close"}] }
     },
     "evaluation"    : "
          function main(load)
