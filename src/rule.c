@@ -200,7 +200,7 @@ rule_json_callback (const char *locator, const char *value, void *data)
             zstr_free (&self->parser.act_mode);
             return 0;
         }
-        char *key = zmalloc(slash - start + 1);
+        char *key = (char *)zmalloc(slash - start + 1);
         memcpy(key, start, slash - start);
         if (is_email) {
             rule_add_result_action (self, key, self->parser.action);
