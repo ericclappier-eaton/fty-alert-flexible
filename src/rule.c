@@ -37,6 +37,7 @@
 struct _rule_t {
     char *name;
     char *description;
+    char *logical_asset;
     zlist_t *metrics;
     zlist_t *assets;
     zlist_t *groups;
@@ -80,7 +81,6 @@ rule_new (void)
     zlist_autofree (self -> types);
     zlist_comparefn (self -> types, string_comparefn);
     self -> result_actions = zhash_new ();
-    zhash_autofree (self -> result_actions);
     //  variables
     self->variables = zhashx_new ();
     zhashx_set_duplicator (self->variables, (zhashx_duplicator_fn *) strdup);
@@ -90,20 +90,27 @@ rule_new (void)
 }
 
 //  --------------------------------------------------------------------------
+//  zhash_free_fn callback for result_actions
+static void free_action(void *data)
+{
+    zlist_t *list = (zlist_t*)data;
+    zlist_destroy(&list);
+}
+
+//  --------------------------------------------------------------------------
 //  Add rule result action
 void rule_add_result_action (rule_t *self, const char *result, const char *action)
 {
     if (!self || !result) return;
-    if (!action) action = "(null)";
 
-    char *item = (char *) zhash_lookup (self->result_actions, result);
-    if (item) {
-        char *newitem = zsys_sprintf ("%s/%s", item, action);
-        zhash_update (self -> result_actions, result, newitem);
-        zstr_free (&newitem);
-    } else {
-        zhash_update (self -> result_actions, result, (void *)action);
+    zlist_t *list = (zlist_t *) zhash_lookup (self->result_actions, result);
+    if (!list) {
+        list = zlist_new ();
+        zlist_autofree (list);
+        zhash_insert (self->result_actions, result, list);
+        zhash_freefn (self->result_actions, result, free_action);
     }
+    zlist_append (list, (char *)action);
 }
 
 //  --------------------------------------------------------------------------
@@ -127,6 +134,10 @@ rule_json_callback (const char *locator, const char *value, void *data)
     else if (streq (mylocator, "description")) {
         zstr_free (&self -> description);
         self -> description = vsjson_decode_string (value);
+    }
+    else if (streq (mylocator, "logical_asset")) {
+        zstr_free (&self -> logical_asset);
+        self -> logical_asset = vsjson_decode_string (value);
     }
     else if (strncmp (mylocator, "metrics/", 7) == 0) {
         char *metric = vsjson_decode_string (value);
@@ -302,9 +313,11 @@ rule_type_exists (rule_t *self, const char *type)
 //  --------------------------------------------------------------------------
 //  Get rule actions
 
-const char *
+zlist_t *
 rule_result_actions (rule_t *self, int result)
 {
+    zlist_t *list = NULL;
+
     if (self) {
         char *results;
         switch (result) {
@@ -327,12 +340,9 @@ rule_result_actions (rule_t *self, int result)
             results = "";
             break;
         }
-        char *item = (char *) zhash_lookup (self->result_actions, results);
-        if (item) {
-            return item;
-        }
+        list = (zlist_t *) zhash_lookup (self->result_actions, results);
     }
-    return "";
+    return list;
 }
 
 //  --------------------------------------------------------------------------
@@ -487,6 +497,8 @@ rule_evaluate (rule_t *self, zlist_t *params, const char *iname, const char *ena
             const char *msg = lua_tostring (self->lua, -1);
             if (msg) *message = strdup (msg);
         }
+        else
+            zsys_debug ("rule_evaluate: invalid content of self->lua.");
         lua_pop (self->lua, 2);
     }
 }
@@ -548,41 +560,6 @@ static char * s_zlist_to_json_array (zlist_t* list)
     return json;
 }
 
-static char * s_actions_to_json_array (const char *actions)
-{
-    char *array = NULL;
-    char *a2 = strdup (actions);
-    size_t capacity = 0;
-
-    char *start = a2;
-    s_string_append (&array, &capacity, "[");
-    while (start) {
-        char *end = strchr (start, '/');
-        if (end) {
-            *end = 0;
-            if (! streq (start, "(null)")) {
-                char *action = vsjson_encode_string (start);
-                s_string_append (&array, &capacity, action);
-                s_string_append (&array, &capacity, ", ");
-                zstr_free (&action);
-            }
-            start = end;
-            ++start;
-        } else {
-            if (! streq (start, "(null)")) {
-                char *action = vsjson_encode_string (start);
-                s_string_append (&array, &capacity, action);
-                zstr_free (&action);
-            }
-            start = NULL;
-        }
-    }
-    zstr_free (&a2);
-    s_string_append (&array, &capacity, "]");
-    return array;
-}
-
-
 //  --------------------------------------------------------------------------
 //  Convert rule back to json
 //  Caller is responsible for destroying the return value
@@ -608,6 +585,13 @@ rule_json (rule_t *self)
         s_string_append (&json, &jsonsize, desc);
         s_string_append (&json, &jsonsize, ",\n");
         zstr_free (&desc);
+    }
+    {
+        char *logical_asset = vsjson_encode_string (self->logical_asset ? self->logical_asset : "");
+        s_string_append (&json, &jsonsize, "\"logical_asset\":");
+        s_string_append (&json, &jsonsize, logical_asset);
+        s_string_append (&json, &jsonsize, ",\n");
+        zstr_free (&logical_asset);
     }
     {
         //metrics
@@ -653,12 +637,12 @@ rule_json (rule_t *self)
                 s_string_append (&json, &jsonsize, ",\n");
             }
             char *key = vsjson_encode_string (zhash_cursor (self->result_actions));
+            char *tmp = s_zlist_to_json_array ((zlist_t *)result);
             s_string_append (&json, &jsonsize, key);
             s_string_append (&json, &jsonsize, ": {\"action\":");
-            char *array = s_actions_to_json_array ( (const char *)result);
-            s_string_append (&json, &jsonsize, array);
+            s_string_append (&json, &jsonsize, tmp);
             s_string_append (&json, &jsonsize, "}");
-            zstr_free (&array);
+            zstr_free (&tmp);
             zstr_free (&key);
             result = zhash_next (self->result_actions);
         }
@@ -711,6 +695,7 @@ rule_destroy (rule_t **self_p)
         //  Free class properties here
         zstr_free (&self->name);
         zstr_free (&self->description);
+        zstr_free (&self->logical_asset);
         zstr_free (&self->evaluation);
         if (self->lua) lua_close (self->lua);
         zlist_destroy (&self->metrics);

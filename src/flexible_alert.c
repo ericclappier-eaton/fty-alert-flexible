@@ -156,7 +156,7 @@ flexible_alert_load_rules (flexible_alert_t *self, const char *path)
 }
 
 void
-flexible_alert_send_alert (flexible_alert_t *self, const char *rulename, const char *actions, const char *asset, int result, const char *message, int ttl)
+flexible_alert_send_alert (flexible_alert_t *self, const char *rulename, zlist_t *actions, const char *asset, int result, const char *message, int ttl)
 {
     char *severity = "OK";
     if (result == -1 || result == 1) severity = "WARNING";
@@ -247,8 +247,23 @@ flexible_alert_clean_metrics (flexible_alert_t *self)
     zlist_destroy (&topics);
 }
 
+
+// --------------------------------------------------------------------------
+// returns true if metric message belong to gpi sensor
+bool
+is_gpi_metric (fty_proto_t* metric)
+{
+    assert (metric);
+    const char * port = fty_proto_aux_string (metric, FTY_PROTO_METRICS_AUX_PORT, "");
+    if (strstr (port, "GPI"))
+        return true;
+    else
+        return false;
+}
+
+
 //  --------------------------------------------------------------------------
-//  Function handles infoming metrics, drives lua evaluation
+//  Function handles incoming metrics, drives lua evaluation
 
 void
 flexible_alert_handle_metric (flexible_alert_t *self, fty_proto_t **ftymsg_p)
@@ -287,7 +302,7 @@ flexible_alert_handle_metric (flexible_alert_t *self, fty_proto_t **ftymsg_p)
             flexible_alert_send_alert (
                 self,
                 quantity,
-                "",
+                NULL,
                 fty_proto_name (ftymsg),
                 ivalue,
                 description,
@@ -693,8 +708,9 @@ flexible_alert_actor (zsock_t *pipe, void *args)
                         // messages from FTY_PROTO_STREAM_METRICS are regular metrics
                         flexible_alert_handle_metric (self, &fmsg);
                     } else if (0 == strcmp(address, FTY_PROTO_STREAM_METRICS_SENSOR)) {
-                        // messages from FTY_PROTO_STREAM_METRICS_SENSORS are gpio sensors
-                        flexible_alert_handle_metric_sensor (self, &fmsg);
+                        // messages from FTY_PROTO_STREAM_METRICS_SENSORS are gpi sensors
+                        if (is_gpi_metric (fmsg))
+                            flexible_alert_handle_metric_sensor (self, &fmsg);
                     } else {
                         zsys_debug("Message proto ID = FTY_PROTO_METRIC, message address not valid = '%s'", address);
                     }

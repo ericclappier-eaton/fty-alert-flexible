@@ -88,7 +88,7 @@ FTY_ALERT_FLEXIBLE_PRIVATE bool
     rule_type_exists (rule_t *self, const char *type);
 
 //  Get rule actions
-FTY_ALERT_FLEXIBLE_PRIVATE const char *
+FTY_ALERT_FLEXIBLE_PRIVATE zlist_t *
     rule_result_actions (rule_t *self, int result);
 
 //  Get global variables
