@@ -4,8 +4,8 @@
     "metrics"       : ["status.input.1.voltage", "status.input.2.voltage"],
     "types"         : ["sts"],
     "results"       :  {
-        "high_critical"  : { "action" : ["EMAIL", "SMS"] },
-        "high_warning"  : { "action" : ["EMAIL"] }
+        "high_critical"  : { "action" : [{"action": "EMAIL"}, {"action": "SMS"}] },
+        "high_warning"  : { "action" : [{"action": "EMAIL"}] }
     },
     "evaluation"    : "
          function main(i1, i2)

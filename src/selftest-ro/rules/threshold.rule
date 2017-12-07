@@ -6,10 +6,10 @@
     "models"        : [ ],
     "groups"        : ["all-racks"],
     "results"       :  {
-        "low_critical"  : { "action" : ["EMAIL", "SMS"] },
-        "low_warning"   : { "action" : ["EMAIL"] },
-        "high_critical" : { "action" : ["EMAIL", "SMS" ] },
-        "high_warning"  : { "action" : ["EMAIL" ] }
+        "low_critical"  : { "action" : [{"action": "EMAIL"}, {"action": "SMS"}] },
+        "low_warning"   : { "action" : [{"action": "EMAIL"}] },
+        "high_critical" : { "action" : [{"action": "EMAIL"}, {"action": "SMS"} ] },
+        "high_warning"  : { "action" : [{"action": "EMAIL"} ] }
     },
     "variables" : {
         "low_critical"  : "5",

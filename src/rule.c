@@ -47,6 +47,11 @@ struct _rule_t {
     zhashx_t *variables;        //  lua context global variables
     char *evaluation;
     lua_State *lua;
+    struct {
+        char *action;
+        char *act_asset;
+        char *act_mode;
+    } parser;                   // json parser state data
 };
 
 
@@ -167,21 +172,50 @@ rule_json_callback (const char *locator, const char *value, void *data)
         zstr_free (&type);
     }
     else if (strncmp (mylocator, "results/", 8) == 0) {
-        // results/[0/]low_warning/action/0
-        char *end = strstr (mylocator, "/action");
-        if (end) {
-            char *start = end;
-            --start;
-            while (*start != '/') --start;
-            ++start;
-            size_t size = end - start;
-            char *key = (char *) zmalloc (size + 1);
-            strncpy (key, start, size);
-            char *action = vsjson_decode_string (value);
+        // results/high_critical/action/0/action
+        // results/high_critical/action/0/asset for action == "GPO_INTERACTION"
+        // results/high_critical/action/0/mode  ditto
+        const char *end = strrchr (mylocator, '/') + 1;
+        if (streq (end, "action"))
+            self->parser.action = vsjson_decode_string (value);
+        else if (streq (end, "asset"))
+            self->parser.act_asset = vsjson_decode_string (value);
+        else if (streq (end, "mode"))
+            self->parser.act_mode = vsjson_decode_string (value);
+        else
+            return 0;
+        if (!self->parser.action)
+            return 0;
+        bool is_email = streq(self->parser.action, "EMAIL") ||
+                        streq(self->parser.action, "SMS");
+        if (!is_email && (!self->parser.act_asset || !self->parser.act_mode))
+            return 0;
+        // we are all set
+        const char *start = mylocator + strlen("results/");
+        const char *slash = strchr(start, '/');
+        if (!slash) {
+            zsys_error ("malformed json: %s", mylocator);
+            zstr_free (&self->parser.action);
+            zstr_free (&self->parser.act_asset);
+            zstr_free (&self->parser.act_mode);
+            return 0;
+        }
+        char *key = (char *)zmalloc(slash - start + 1);
+        memcpy(key, start, slash - start);
+        if (is_email) {
+            rule_add_result_action (self, key, self->parser.action);
+        } else {
+            char *action = zsys_sprintf("%s:%s:%s",
+                    self->parser.action,
+                    self->parser.act_asset,
+                    self->parser.act_mode);
             rule_add_result_action (self, key, action);
-            zstr_free (&key);
             zstr_free (&action);
         }
+        zstr_free (&key);
+        zstr_free (&self->parser.action);
+        zstr_free (&self->parser.act_asset);
+        zstr_free (&self->parser.act_mode);
     }
     else if (streq (mylocator, "evaluation")) {
         zstr_free (&self -> evaluation);
@@ -560,6 +594,59 @@ static char * s_zlist_to_json_array (zlist_t* list)
     return json;
 }
 
+static char * s_actions_to_json_array (zlist_t *actions)
+{
+    char *item = (char *) zlist_first (actions);
+    char *json = NULL;
+    size_t jsonsize = 0;
+    s_string_append (&json, &jsonsize, "[");
+    while (item) {
+        s_string_append (&json, &jsonsize, "{\"action\": ");
+        const char *p = item;
+        const char *colon = strchr (p, ':');
+        if (!colon) {
+            // EMAIL or SMS
+            if (!streq(item, "EMAIL") && !streq(item, "SMS"))
+                zsys_warning ("Unrecognized action: %s", item);
+            char *encoded = vsjson_encode_string(item);
+            s_string_append (&json, &jsonsize, encoded);
+            zstr_free (&encoded);
+        } else {
+            // GPO_INTERACTION
+            char *encoded = NULL;
+            if (strncmp (item, "GPO_INTERACTION", colon - p) != 0)
+                zsys_warning ("Unrecognized action: %.*s", colon - p, p);
+            encoded = vsjson_encode_nstring(p, colon - p);
+            s_string_append (&json, &jsonsize, encoded);
+            zstr_free (&encoded);
+            s_string_append (&json, &jsonsize, ", \"asset\": ");
+            p = colon + 1;
+            if (!(colon = strchr (p, ':'))) {
+                zsys_warning ("Missing mode field in \"%s\"", item);
+                colon = p + strlen(p);
+            }
+            encoded = vsjson_encode_nstring(p, colon - p);
+            s_string_append (&json, &jsonsize, encoded);
+            zstr_free (&encoded);
+            if (*colon == ':') {
+                s_string_append (&json, &jsonsize, ", \"mode\": ");
+                p = colon + 1;
+                encoded = vsjson_encode_string(p);
+                s_string_append (&json, &jsonsize, encoded);
+                zstr_free (&encoded);
+            }
+        }
+        s_string_append (&json, &jsonsize, "}, ");
+        item = (char *) zlist_next (actions);
+    }
+    if (zlist_size (actions)) {
+        size_t x = strlen (json);
+        json [x-2] = 0;
+    }
+    s_string_append (&json, &jsonsize, "]");
+    return json;
+}
+
 //  --------------------------------------------------------------------------
 //  Convert rule back to json
 //  Caller is responsible for destroying the return value
@@ -637,9 +724,9 @@ rule_json (rule_t *self)
                 s_string_append (&json, &jsonsize, ",\n");
             }
             char *key = vsjson_encode_string (zhash_cursor (self->result_actions));
-            char *tmp = s_zlist_to_json_array ((zlist_t *)result);
+            char *tmp = s_actions_to_json_array ((zlist_t *)result);
             s_string_append (&json, &jsonsize, key);
-            s_string_append (&json, &jsonsize, ": {\"action\":");
+            s_string_append (&json, &jsonsize, ": {\"action\": ");
             s_string_append (&json, &jsonsize, tmp);
             s_string_append (&json, &jsonsize, "}");
             zstr_free (&tmp);
@@ -805,17 +892,38 @@ rule_test (bool verbose)
         printf ("      Load test #3 - json construction test ... ");
         rule_t *self = rule_new ();
         assert (self);
-        rule_file = zsys_sprintf ("%s/rules/%s", SELFTEST_DIR_RO, "load.rule");
-        assert (rule_file);
+        rule_file = zsys_sprintf ("%s/rules/%s", SELFTEST_DIR_RO, "test.rule");
+        char * json_file = zsys_sprintf ("%s/rules/%s", SELFTEST_DIR_RO, "test.json");
+        assert (rule_file && json_file);
         rule_load (self, rule_file);
         zstr_free (&rule_file);
+        FILE *f;
+        char *stock_json;
+        assert (f = fopen (json_file, "r"));
+        assert (stock_json = (char *)calloc (1, 4096));
+        assert (fread (stock_json, 1, 4096, f));
+        fclose (f);
+        zstr_free (&json_file);
         // test rule to json
         char *json = rule_json (self);
+        // XXX: This is fragile, as we require the json to be bit-identical.
+        // If you get an error here, manually review the actual difference.
+        // In particular, the hash order is not stable
+        if (!streq (json, stock_json)) {
+            printf ("Generated json is different\nEXPECTED:\n%sGOT:\n%s",
+                    stock_json, json);
+            abort ();
+        }
+        zstr_free (&stock_json);
         rule_t *rule = rule_new ();
         rule_parse (rule, json);
         char *json2 = rule_json (rule);
         assert (streq (rule_name(rule), rule_name (self)));
-        assert (streq (json,json2));
+        if (!streq (json, json2)) {
+            printf ("Generated json differs after second pass\nEXPECTED:\n%sGOT:\n%s",
+                    json, json2);
+            abort ();
+        }
         rule_destroy (&rule);
         zstr_free (&json);
         zstr_free (&json2);
