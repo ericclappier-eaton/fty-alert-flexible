@@ -254,8 +254,9 @@ bool
 is_gpi_metric (fty_proto_t* metric)
 {
     assert (metric);
-    const char * port = fty_proto_aux_string (metric, FTY_PROTO_METRICS_AUX_PORT, "");
-    if (strstr (port, "GPI"))
+    const char *port = fty_proto_aux_string (metric, FTY_PROTO_METRICS_AUX_PORT, "");
+    const char *ext_port = fty_proto_aux_string (metric, "ext-port", "");
+    if (strstr (port, "GPI") || ext_port != NULL)
         return true;
     else
         return false;
