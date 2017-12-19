@@ -591,7 +591,7 @@ flexible_alert_delete_rule (flexible_alert_t *self, const char *name, const char
 //  handling requests for adding rule.
 
 zmsg_t *
-flexible_alert_add_rule (flexible_alert_t *self, const char *json, const char *old_name, const char *dir)
+flexible_alert_add_rule (flexible_alert_t *self, const char *json, const char *old_name, bool incomplete, const char *dir)
 {
     if (! self || !json || !dir) return NULL;
 
@@ -603,6 +603,12 @@ flexible_alert_add_rule (flexible_alert_t *self, const char *json, const char *o
         rule_destroy (&newrule);
         return reply;
     };
+    rule_t *oldrule = (rule_t *) zhash_lookup (self->rules, rule_name (newrule));
+    if (incomplete && oldrule) {
+        zsys_info ("merging incomplete rule %s from fty-alert-engine",
+                rule_name (newrule));
+        rule_merge (oldrule, newrule);
+    }
     if (old_name) {
         zsys_info ("deleting rule %s", old_name);
         zmsg_t *msg = flexible_alert_delete_rule (self, old_name, dir);
@@ -723,6 +729,11 @@ flexible_alert_actor (zsock_t *pipe, void *args)
                 char *cmd = zmsg_popstr (msg);
                 char *p1 = zmsg_popstr (msg);
                 char *p2 = zmsg_popstr (msg);
+                // XXX: fty-alert-engine does not know about configured
+                // actions. The proper fix is to extend the protocol to
+                // flag a rule as incomplete.
+                bool incomplete = streq (mlm_client_sender (self->mlm),
+                        "fty-autoconfig");
                 zmsg_t *reply = NULL;
                 if (cmd) {
                     if (streq (cmd, "LIST")) {
@@ -742,7 +753,8 @@ flexible_alert_actor (zsock_t *pipe, void *args)
                         // request: ADD/rulejson/rulename -- this is replace
                         // reply: OK/rulejson
                         // reply: ERROR/reason
-                        reply = flexible_alert_add_rule (self, p1, p2, ruledir);
+                        reply = flexible_alert_add_rule (self, p1, p2,
+                                incomplete, ruledir);
                     }
                     else if (streq (cmd, "DELETE")) {
                         // request: DELETE/name

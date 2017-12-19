@@ -419,6 +419,17 @@ int rule_load (rule_t *self, const char *path)
 }
 
 //  --------------------------------------------------------------------------
+// Update new_rule with configured actions of old_rule
+void rule_merge (rule_t *old_rule, rule_t *new_rule)
+{
+    zhash_destroy (&new_rule->result_actions);
+    // XXX: We invalidate the old rule here, because we know it's going to
+    // be destroyed. The proper fix is to use zhashx and duplicate the hash.
+    new_rule->result_actions = old_rule->result_actions;
+    old_rule->result_actions = NULL;
+}
+
+//  --------------------------------------------------------------------------
 //  Save json rule to file
 
 int rule_save (rule_t *self, const char *path)

@@ -100,6 +100,10 @@ FTY_ALERT_FLEXIBLE_PRIVATE zhashx_t *
 FTY_ALERT_FLEXIBLE_PRIVATE int
     rule_load (rule_t *self, const char *path);
 
+// Update new_rule with configured actions of old_rule
+FTY_ALERT_FLEXIBLE_PRIVATE void
+    rule_merge (rule_t *old_rule, rule_t *new_rule);
+
 //  Save json rule to file
 FTY_ALERT_FLEXIBLE_PRIVATE int
     rule_save (rule_t *self, const char *path);
