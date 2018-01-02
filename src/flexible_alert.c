@@ -604,7 +604,8 @@ flexible_alert_add_rule (flexible_alert_t *self, const char *json, const char *o
         return reply;
     };
     rule_t *oldrule = (rule_t *) zhash_lookup (self->rules, rule_name (newrule));
-    if (incomplete && oldrule) {
+    // we probably shouldn't merge other rules
+    if (incomplete && oldrule && strstr (rule_name (oldrule), "sensorgpio")) {
         zsys_info ("merging incomplete rule %s from fty-alert-engine",
                 rule_name (newrule));
         rule_merge (oldrule, newrule);
