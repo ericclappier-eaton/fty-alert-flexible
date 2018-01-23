@@ -72,7 +72,7 @@ int main (int argc, char *argv [])
     assert (server);
     zstr_sendx (server, "BIND", ENDPOINT, ACTOR_NAME, NULL);
     zstr_sendx (server, "PRODUCER", FTY_PROTO_STREAM_ALERTS_SYS, NULL);
-    zstr_sendx (server, "CONSUMER", FTY_PROTO_STREAM_METRICS, ".*", NULL);
+    zstr_sendx (server, "CONSUMER", FTY_PROTO_STREAM_METRICS, ".*@sts-.*", NULL);
     zstr_sendx (server, "CONSUMER", FTY_PROTO_STREAM_METRICS_SENSOR, "status.*", NULL);
     zstr_sendx (server, "CONSUMER", FTY_PROTO_STREAM_ASSETS, ".*", NULL);
     zstr_sendx (server, "LOADRULES", RULES_DIR, NULL);
