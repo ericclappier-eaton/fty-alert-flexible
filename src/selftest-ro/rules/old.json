@@ -7,6 +7,7 @@
 "models":[],
 "groups":[],
 "results": {
+"high_warning": {"action": []},
 "low_critical": {"action": [{"action": "SMS"}, {"action": "EMAIL"}]},
 "high_critical": {"action": [{"action": "EMAIL"}, {"action": "SMS"}]}},
 "evaluation":"\n         function main(load)\n             if load > 90 then\n                 return HIGH_CRITICAL, NAME .. ' is overloaded (' .. load .. '%);\n             end\n             if load > 70 then\n                 return HIGH_WARNING, NAME .. ' is overloaded (' .. load .. '%);\n             end\n             return OK, 'Load on ' .. NAME ..  ' is within limit (' .. load .. '%)';\n         end\n    "

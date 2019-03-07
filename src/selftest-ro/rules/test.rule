@@ -15,7 +15,7 @@
         "low_critical": { "action" : [
             {"action": "SMS"},
             {"action": "EMAIL"},
-            {"asset": "gpo-42", "action": "GPO_INTERACTION", "mode": "close"}] }
+            {"action": "GPO_INTERACTION", "asset": "gpo-42", "mode": "close"}] }
     },
     "evaluation"    : "
          function main(load)

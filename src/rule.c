@@ -115,7 +115,8 @@ void rule_add_result_action (rule_t *self, const char *result, const char *actio
         zhash_insert (self->result_actions, result, list);
         zhash_freefn (self->result_actions, result, free_action);
     }
-    zlist_append (list, (char *)action);
+    if (action)
+        zlist_append (list, (char *)action);
 }
 
 //  --------------------------------------------------------------------------
@@ -190,12 +191,21 @@ rule_json_callback (const char *locator, const char *value, void *data)
             self->parser.act_mode = vsjson_decode_string (value);
         else
             return 0;
-        if (!self->parser.action)
-            return 0;
-        bool is_email = streq(self->parser.action, "EMAIL") ||
-                        streq(self->parser.action, "SMS");
-        if (!is_email && (!self->parser.act_asset || !self->parser.act_mode))
-            return 0;
+        // support empty action set
+        bool is_empty = false;
+        bool is_email = false;
+        if (!self->parser.action) {
+            log_debug("%s: no action configured", __func__);
+            is_empty = true;
+        }
+        else {
+            is_email = streq(self->parser.action, "EMAIL") ||
+                            streq(self->parser.action, "SMS");
+            if (!is_email && (!self->parser.act_asset || !self->parser.act_mode)) {
+                log_debug("%s: action is not mail, nor asset nor mode", __func__);
+                return 0;
+            }
+        }
         // we are all set
         const char *start = mylocator + strlen("results/");
         const char *slash = strchr(start, '/');
@@ -208,15 +218,20 @@ rule_json_callback (const char *locator, const char *value, void *data)
         }
         char *key = (char *)zmalloc(slash - start + 1);
         memcpy(key, start, slash - start);
+        log_debug("%s: key = %s", __func__, key);
         if (is_email) {
             rule_add_result_action (self, key, self->parser.action);
         } else {
-            char *action = zsys_sprintf("%s:%s:%s",
-                    self->parser.action,
-                    self->parser.act_asset,
-                    self->parser.act_mode);
-            rule_add_result_action (self, key, action);
-            zstr_free (&action);
+            if (!is_empty) {
+                char *action = zsys_sprintf("%s:%s:%s",
+                        self->parser.action,
+                        self->parser.act_asset,
+                        self->parser.act_mode);
+                rule_add_result_action (self, key, action);
+                zstr_free (&action);
+            }
+            else
+                rule_add_result_action (self, key, NULL);
         }
         zstr_free (&key);
         zstr_free (&self->parser.action);
@@ -628,6 +643,11 @@ static char * s_actions_to_json_array (zlist_t *actions)
     size_t jsonsize = 0;
     s_string_append (&json, &jsonsize, "[");
     while (item) {
+        // empty action
+        if (!item) {
+            log_debug("%s: action is empty", __func__);
+            continue;
+        }
         s_string_append (&json, &jsonsize, "{\"action\": ");
         const char *p = item;
         const char *colon = strchr (p, ':');
