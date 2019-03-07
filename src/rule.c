@@ -643,11 +643,6 @@ static char * s_actions_to_json_array (zlist_t *actions)
     size_t jsonsize = 0;
     s_string_append (&json, &jsonsize, "[");
     while (item) {
-        // empty action
-        if (!item) {
-            log_debug("%s: action is empty", __func__);
-            continue;
-        }
         s_string_append (&json, &jsonsize, "{\"action\": ");
         const char *p = item;
         const char *colon = strchr (p, ':');
