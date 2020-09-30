@@ -23,7 +23,7 @@
         <option name = "require_gitignore" value = "1" />
     </target>
     <target name = "jenkins" >
-        <option name = "agent_label" value = "devel-image &amp;&amp; x86_64" />
+        <option name = "agent_label" value = "feature-image &amp;&amp; FEATURE_BRANCH=PQSW-265-CCOE-assessment" />
         <option name = "triggers_pollSCM" value = "H/2 * * * *" />
         <option name = "test_cppcheck" value = "1" />
         <option name = "build_docs" value = "1" />
@@ -86,7 +86,8 @@
         test = "fty_shm_test"
         repository = "https://github.com/42ity/fty-shm.git" />
 
-    <use project = "lua-5.1" />
+    <use project = "lua-5.4" header = "lua5.4/lua.h" debian_name = "liblua5.4-dev" redhat_name = "lua-devel"
+        min_major = "5" min_minor = "4" min_patch = "0" />
 
     <class name = "rule" private = "1">class representing one rule</class>
     <class name = "vsjson" private = "1">JSON parser</class>

@@ -65,7 +65,7 @@ BuildRequires:  fty-common-devel
 BuildRequires:  fty-proto-devel >= 1.0.0
 BuildRequires:  cxxtools-devel
 BuildRequires:  fty_shm-devel >= 1.0.0
-BuildRequires:  lua-devel >= 5.1.0
+BuildRequires:  lua-devel >= 5.4.0
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
 
 %description
@@ -98,7 +98,7 @@ Requires:       fty-common-devel
 Requires:       fty-proto-devel >= 1.0.0
 Requires:       cxxtools-devel
 Requires:       fty_shm-devel >= 1.0.0
-Requires:       lua-devel >= 5.1.0
+Requires:       lua-devel >= 5.4.0
 
 %description devel
 agent for creating evaluating alerts development tools

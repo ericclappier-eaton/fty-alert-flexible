@@ -150,6 +150,35 @@ check-verbose: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW
 	$(LIBTOOL) --mode=execute $(builddir)/src/fty_alert_flexible_selftest -v
 	$(MAKE) check-empty-selftest-rw
 
+check-rule: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute $(builddir)/src/fty_alert_flexible_selftest -t rule
+	$(MAKE) check-empty-selftest-rw
+check-rule-verbose: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute $(builddir)/src/fty_alert_flexible_selftest -v -t rule
+	$(MAKE) check-empty-selftest-rw
+
+check-vsjson: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute $(builddir)/src/fty_alert_flexible_selftest -t vsjson
+	$(MAKE) check-empty-selftest-rw
+check-vsjson-verbose: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute $(builddir)/src/fty_alert_flexible_selftest -v -t vsjson
+	$(MAKE) check-empty-selftest-rw
+
+check-metrics: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute $(builddir)/src/fty_alert_flexible_selftest -t metrics
+	$(MAKE) check-empty-selftest-rw
+check-metrics-verbose: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute $(builddir)/src/fty_alert_flexible_selftest -v -t metrics
+	$(MAKE) check-empty-selftest-rw
+
+check-flexible_alert: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute $(builddir)/src/fty_alert_flexible_selftest -t flexible_alert
+	$(MAKE) check-empty-selftest-rw
+check-flexible_alert-verbose: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute $(builddir)/src/fty_alert_flexible_selftest -v -t flexible_alert
+	$(MAKE) check-empty-selftest-rw
+
+
 # Run the selftest binary under valgrind to check for memory leaks
 memcheck: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
 	$(LIBTOOL) --mode=execute valgrind --tool=memcheck \
@@ -167,6 +196,63 @@ memcheck-verbose: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR
 		$(builddir)/src/fty_alert_flexible_selftest -v
 	$(MAKE) check-empty-selftest-rw
 
+memcheck-rule: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute valgrind --tool=memcheck \
+		--leak-check=full --show-reachable=yes --error-exitcode=1 \
+		--suppressions=$(srcdir)/src/.valgrind.supp \
+		$(VALGRIND_OPTIONS) \
+		$(builddir)/src/fty_alert_flexible_selftest -t rule
+	$(MAKE) check-empty-selftest-rw
+memcheck-rule-verbose: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute valgrind --tool=memcheck \
+		--leak-check=full --show-reachable=yes --error-exitcode=1 \
+		--suppressions=$(srcdir)/src/.valgrind.supp \
+		$(VALGRIND_OPTIONS) \
+		$(builddir)/src/fty_alert_flexible_selftest -v -t rule
+	$(MAKE) check-empty-selftest-rw
+memcheck-vsjson: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute valgrind --tool=memcheck \
+		--leak-check=full --show-reachable=yes --error-exitcode=1 \
+		--suppressions=$(srcdir)/src/.valgrind.supp \
+		$(VALGRIND_OPTIONS) \
+		$(builddir)/src/fty_alert_flexible_selftest -t vsjson
+	$(MAKE) check-empty-selftest-rw
+memcheck-vsjson-verbose: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute valgrind --tool=memcheck \
+		--leak-check=full --show-reachable=yes --error-exitcode=1 \
+		--suppressions=$(srcdir)/src/.valgrind.supp \
+		$(VALGRIND_OPTIONS) \
+		$(builddir)/src/fty_alert_flexible_selftest -v -t vsjson
+	$(MAKE) check-empty-selftest-rw
+memcheck-metrics: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute valgrind --tool=memcheck \
+		--leak-check=full --show-reachable=yes --error-exitcode=1 \
+		--suppressions=$(srcdir)/src/.valgrind.supp \
+		$(VALGRIND_OPTIONS) \
+		$(builddir)/src/fty_alert_flexible_selftest -t metrics
+	$(MAKE) check-empty-selftest-rw
+memcheck-metrics-verbose: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute valgrind --tool=memcheck \
+		--leak-check=full --show-reachable=yes --error-exitcode=1 \
+		--suppressions=$(srcdir)/src/.valgrind.supp \
+		$(VALGRIND_OPTIONS) \
+		$(builddir)/src/fty_alert_flexible_selftest -v -t metrics
+	$(MAKE) check-empty-selftest-rw
+memcheck-flexible_alert: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute valgrind --tool=memcheck \
+		--leak-check=full --show-reachable=yes --error-exitcode=1 \
+		--suppressions=$(srcdir)/src/.valgrind.supp \
+		$(VALGRIND_OPTIONS) \
+		$(builddir)/src/fty_alert_flexible_selftest -t flexible_alert
+	$(MAKE) check-empty-selftest-rw
+memcheck-flexible_alert-verbose: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute valgrind --tool=memcheck \
+		--leak-check=full --show-reachable=yes --error-exitcode=1 \
+		--suppressions=$(srcdir)/src/.valgrind.supp \
+		$(VALGRIND_OPTIONS) \
+		$(builddir)/src/fty_alert_flexible_selftest -v -t flexible_alert
+	$(MAKE) check-empty-selftest-rw
+
 # Run the selftest binary under valgrind to check for performance leaks
 callcheck: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
 	$(LIBTOOL) --mode=execute valgrind --tool=callgrind \
@@ -180,6 +266,47 @@ callcheck-verbose: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DI
 		$(builddir)/src/fty_alert_flexible_selftest -v
 	$(MAKE) check-empty-selftest-rw
 
+callcheck-rule: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute valgrind --tool=callgrind \
+		$(VALGRIND_OPTIONS) \
+		$(builddir)/src/fty_alert_flexible_selftest -t rule
+	$(MAKE) check-empty-selftest-rw
+callcheck-rule-verbose: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute valgrind --tool=callgrind \
+		$(VALGRIND_OPTIONS) \
+		$(builddir)/src/fty_alert_flexible_selftest -v -t rule
+	$(MAKE) check-empty-selftest-rw
+callcheck-vsjson: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute valgrind --tool=callgrind \
+		$(VALGRIND_OPTIONS) \
+		$(builddir)/src/fty_alert_flexible_selftest -t vsjson
+	$(MAKE) check-empty-selftest-rw
+callcheck-vsjson-verbose: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute valgrind --tool=callgrind \
+		$(VALGRIND_OPTIONS) \
+		$(builddir)/src/fty_alert_flexible_selftest -v -t vsjson
+	$(MAKE) check-empty-selftest-rw
+callcheck-metrics: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute valgrind --tool=callgrind \
+		$(VALGRIND_OPTIONS) \
+		$(builddir)/src/fty_alert_flexible_selftest -t metrics
+	$(MAKE) check-empty-selftest-rw
+callcheck-metrics-verbose: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute valgrind --tool=callgrind \
+		$(VALGRIND_OPTIONS) \
+		$(builddir)/src/fty_alert_flexible_selftest -v -t metrics
+	$(MAKE) check-empty-selftest-rw
+callcheck-flexible_alert: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute valgrind --tool=callgrind \
+		$(VALGRIND_OPTIONS) \
+		$(builddir)/src/fty_alert_flexible_selftest -t flexible_alert
+	$(MAKE) check-empty-selftest-rw
+callcheck-flexible_alert-verbose: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute valgrind --tool=callgrind \
+		$(VALGRIND_OPTIONS) \
+		$(builddir)/src/fty_alert_flexible_selftest -v -t flexible_alert
+	$(MAKE) check-empty-selftest-rw
+
 # Run the selftest binary under gdb for debugging
 debug: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
 	$(LIBTOOL) --mode=execute gdb -q \
@@ -188,7 +315,40 @@ debug: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_
 
 debug-verbose: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
 	$(LIBTOOL) --mode=execute gdb -q \
-		$(builddir)/src/fty_alert_flexible_selftest -v
+		--args $(builddir)/src/fty_alert_flexible_selftest -v
+	$(MAKE) check-empty-selftest-rw
+
+debug-rule: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute gdb -q \
+		--args $(builddir)/src/fty_alert_flexible_selftest -t rule
+	$(MAKE) check-empty-selftest-rw
+debug-rule-verbose: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute gdb -q \
+		--args $(builddir)/src/fty_alert_flexible_selftest -v -t rule
+	$(MAKE) check-empty-selftest-rw
+debug-vsjson: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute gdb -q \
+		--args $(builddir)/src/fty_alert_flexible_selftest -t vsjson
+	$(MAKE) check-empty-selftest-rw
+debug-vsjson-verbose: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute gdb -q \
+		--args $(builddir)/src/fty_alert_flexible_selftest -v -t vsjson
+	$(MAKE) check-empty-selftest-rw
+debug-metrics: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute gdb -q \
+		--args $(builddir)/src/fty_alert_flexible_selftest -t metrics
+	$(MAKE) check-empty-selftest-rw
+debug-metrics-verbose: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute gdb -q \
+		--args $(builddir)/src/fty_alert_flexible_selftest -v -t metrics
+	$(MAKE) check-empty-selftest-rw
+debug-flexible_alert: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute gdb -q \
+		--args $(builddir)/src/fty_alert_flexible_selftest -t flexible_alert
+	$(MAKE) check-empty-selftest-rw
+debug-flexible_alert-verbose: src/fty_alert_flexible_selftest $(top_builddir)/$(SELFTEST_DIR_RW) $(top_builddir)/$(SELFTEST_DIR_RO)
+	$(LIBTOOL) --mode=execute gdb -q \
+		--args $(builddir)/src/fty_alert_flexible_selftest -v -t flexible_alert
 	$(MAKE) check-empty-selftest-rw
 
 # Run the selftest binary with verbose switch for tracing

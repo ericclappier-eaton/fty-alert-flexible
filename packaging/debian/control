@@ -34,7 +34,7 @@ Build-Depends: debhelper (>= 9),
     libfty-proto-dev (>= 1.0.0),
     libcxxtools-dev,
     libfty-shm-dev (>= 1.0.0),
-    liblua5.1-0-dev (>= 5.1.0),
+    liblua5.4-dev (>= 5.4.0),
     gcc (>= 4.9.0), g++ (>= 4.9.0),
     systemd,
     dh-systemd,
@@ -62,7 +62,7 @@ Depends:
     libfty-proto-dev (>= 1.0.0),
     libcxxtools-dev,
     libfty-shm-dev (>= 1.0.0),
-    liblua5.1-0-dev (>= 5.1.0),
+    liblua5.4-dev (>= 5.4.0),
     libfty-alert-flexible0 (= ${binary:Version})
 Description: fty-alert-flexible development tools
  This package contains development files for fty-alert-flexible:
