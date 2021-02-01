@@ -74,7 +74,7 @@
         min_major = "1" min_minor = "0" min_patch = "0"
         repository = "https://github.com/42ity/fty-proto.git"
         test = "fty_proto_test" />
-    
+
     <use project = "cxxtools"
         test = "cxxtools::Utf8Codec::Utf8Codec"
         header = "cxxtools/allocator.h"
@@ -91,6 +91,7 @@
     <class name = "rule" private = "1">class representing one rule</class>
     <class name = "vsjson" private = "1">JSON parser</class>
     <class name = "metrics" private = "1">List of metrics</class>
+    <class name = "fty_alert_flexible_audit_log" selftest = "0" state = "stable">Manage audit log</class>
     <class name = "flexible_alert" state = "stable">Main class for evaluating alerts</class>
 
     <main name = "fty-alert-flexible" service = "1" />

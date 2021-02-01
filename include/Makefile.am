@@ -4,6 +4,7 @@
 ################################################################################
 nobase_include_HEADERS = \
     fty-alert-flexible.h \
+    fty_alert_flexible_audit_log.h \
     flexible_alert.h \
     fty_alert_flexible_library.h
 

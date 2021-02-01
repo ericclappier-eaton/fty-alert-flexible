@@ -80,11 +80,14 @@
 
 //  Opaque class structures to allow forward references
 //  These classes are stable or legacy and built in all releases
+typedef struct _fty_alert_flexible_audit_log_t fty_alert_flexible_audit_log_t;
+#define FTY_ALERT_FLEXIBLE_AUDIT_LOG_T_DEFINED
 typedef struct _flexible_alert_t flexible_alert_t;
 #define FLEXIBLE_ALERT_T_DEFINED
 
 
 //  Public classes, each with its own header file
+#include "fty_alert_flexible_audit_log.h"
 #include "flexible_alert.h"
 
 #ifdef FTY_ALERT_FLEXIBLE_BUILD_DRAFT_API
