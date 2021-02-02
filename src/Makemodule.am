@@ -16,6 +16,7 @@ src_libfty_alert_flexible_la_SOURCES = \
     src/rule.cc \
     src/vsjson.cc \
     src/metrics.cc \
+    src/fty_alert_flexible_audit_log.cc \
     src/flexible_alert.cc \
     src/platform.h
 

@@ -216,8 +216,10 @@ flexible_alert_evaluate (flexible_alert_t *self, rule_t *rule, const char *asset
     zlist_t *params = zlist_new ();
     zlist_autofree (params);
 
-    // prepare lua function parameters
+    bool isMetricMissing = false;
+    std::vector<std::string> auditValues;
 
+    // prepare lua function parameters
     int ttl = 0;
     const char *param = rule_metric_first (rule);
     while (param) {
@@ -229,39 +231,67 @@ flexible_alert_evaluate (flexible_alert_t *self, rule_t *rule, const char *asset
             zlist_destroy (&params);
             log_trace ("abort evaluation of rule %s because %s metric is missing", rule_name(rule), topic);
             zstr_free (&topic);
-            return;
+            std::stringstream ss;
+            ss << param << " = " << "NaN";
+            auditValues.push_back(ss.str());
+            isMetricMissing = true;
+            break;
         }
         // TTL should be set accorning shortest ttl in metric
         if (ttl == 0 || ttl > (int) fty_proto_ttl (ftymsg)) ttl = fty_proto_ttl (ftymsg);
         zstr_free (&topic);
-        zlist_append (params, (char *) fty_proto_value (ftymsg));
+        const char *value = fty_proto_value (ftymsg);
+        zlist_append (params, (char *) value);
+
+        std::stringstream ss;
+        ss << param << " = " << value;
+        auditValues.push_back(ss.str());
+
         param = rule_metric_next (rule);
     }
 
-    // call the lua function
-    char *message = NULL;
     int result = 0;
+    char *message = NULL;
 
-    rule_evaluate (rule, params, assetname, ename, &result, &message);
+    // if no metric is missing
+    if (!isMetricMissing) {
 
-    log_debug(ANSI_COLOR_WHITE_ON_BLUE  "rule_evaluate %s, assetname: %s: result = %d" ANSI_COLOR_RESET,
-        rule_name(rule), assetname, result);
+        // call the lua function
+        rule_evaluate (rule, params, assetname, ename, &result, &message);
 
-    if (result != RULE_ERROR) {
-        flexible_alert_send_alert (
-            self,
-            rule,
-            assetname,
-            result,
-            message, ttl * 5 / 2
-        );
+        log_debug(ANSI_COLOR_WHITE_ON_BLUE  "rule_evaluate %s, assetname: %s: result = %d" ANSI_COLOR_RESET,
+            rule_name(rule), assetname, result);
+
+        if (result != RULE_ERROR) {
+            flexible_alert_send_alert (
+                self,
+                rule,
+                assetname,
+                result,
+                message, ttl * 5 / 2
+            );
+        }
+        else {
+            log_error (ANSI_COLOR_RED "error evaluating rule %s" ANSI_COLOR_RESET, rule_name (rule));
+        }
+        zstr_free (&message);
+        zlist_destroy (&params);
     }
-    else {
-        log_error (ANSI_COLOR_RED "error evaluating rule %s" ANSI_COLOR_RESET, rule_name (rule));
-    }
 
-    zstr_free (&message);
-    zlist_destroy (&params);
+    // log audit alarm
+    std::stringstream ss;
+    std::for_each(begin(auditValues), end(auditValues), [&ss](const std::string &elem) { if (ss.str().empty()) ss << elem; else ss << ", " << elem; } );
+    std::string sResult;
+    switch (result) {
+      case   0: sResult = !isMetricMissing ? "OK" : "MISSING_VALUE"; break;
+      case   1: sResult = "HIGH_WARNING"; break;
+      case   2: sResult = "HIGH_CRITICAL"; break;
+      case  -1: sResult = "LOW_WARNING"; break;
+      case  -2: sResult = "LOW_CRITICAL"; break;
+      case 255: sResult = "RULE_ERROR"; break;
+      default:  sResult = "BAD_VALUE"; break;
+    }
+    log_debug_alarms_flexible_audit("Evaluate rule '%s', assetname: %s [%s] -> result = %s, message = '%s'", rule_name(rule), assetname, ss.str().c_str(), sResult.c_str(), message ? message : "");
 }
 
 //  --------------------------------------------------------------------------
@@ -943,6 +973,13 @@ flexible_alert_test (bool verbose)
     ftylog_setInstance("flexible_alert_test","");
     if (verbose)
         ftylog_setVeboseMode(ftylog_getInstance());
+
+    std::string logConfigFile = "src/alertsflexiblelog.cfg";
+    ManageFtyLog::getInstanceFtylog()->setConfigFile(logConfigFile);
+
+    // initialize log for auditability
+    AlertsFlexibleAuditLogManager::init(logConfigFile.c_str());
+
     // Note: If your selftest reads SCMed fixture data, please keep it in
     // src/selftest-ro; if your test creates filesystem objects, please
     // do so under src/selftest-rw. They are defined below along with a
@@ -1142,6 +1179,10 @@ flexible_alert_test (bool verbose)
     //destroy malamute
     zactor_destroy (&malamute);
     fty_shm_delete_test_dir();
+
+    // release audit context
+    AlertsFlexibleAuditLogManager::deinit();
+
     //  @end
     printf ("OK\n");
 }
