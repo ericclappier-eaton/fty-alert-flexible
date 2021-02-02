@@ -973,6 +973,13 @@ flexible_alert_test (bool verbose)
     ftylog_setInstance("flexible_alert_test","");
     if (verbose)
         ftylog_setVeboseMode(ftylog_getInstance());
+
+    std::string logConfigFile = "src/alertsflexiblelog.cfg";
+    ManageFtyLog::getInstanceFtylog()->setConfigFile(logConfigFile);
+
+    // initialize log for auditability
+    AlertsFlexibleAuditLogManager::init(logConfigFile.c_str());
+
     // Note: If your selftest reads SCMed fixture data, please keep it in
     // src/selftest-ro; if your test creates filesystem objects, please
     // do so under src/selftest-rw. They are defined below along with a
@@ -1172,6 +1179,10 @@ flexible_alert_test (bool verbose)
     //destroy malamute
     zactor_destroy (&malamute);
     fty_shm_delete_test_dir();
+
+    // release audit context
+    AlertsFlexibleAuditLogManager::deinit();
+
     //  @end
     printf ("OK\n");
 }
