@@ -291,7 +291,7 @@ flexible_alert_evaluate (flexible_alert_t *self, rule_t *rule, const char *asset
       case 255: sResult = "RULE_ERROR"; break;
       default:  sResult = "BAD_VALUE"; break;
     }
-    log_debug_alarms_flexible_audit("Evaluate rule '%s', assetname: %s [%s] -> result = %s, message = '%s'", rule_name(rule), assetname, ss.str().c_str(), sResult.c_str(), message ? message : "");
+    log_info_alarms_flexible_audit("Evaluate rule '%s', assetname: %s [%s] -> result = %s, message = '%s'", rule_name(rule), assetname, ss.str().c_str(), sResult.c_str(), message ? message : "");
 }
 
 //  --------------------------------------------------------------------------
