@@ -974,7 +974,7 @@ flexible_alert_test (bool verbose)
     if (verbose)
         ftylog_setVeboseMode(ftylog_getInstance());
 
-    std::string logConfigFile = "src/alertsflexiblelog.cfg";
+    std::string logConfigFile = "src/fty-alert-flexible-log.cfg";
     ManageFtyLog::getInstanceFtylog()->setConfigFile(logConfigFile);
 
     // initialize log for auditability

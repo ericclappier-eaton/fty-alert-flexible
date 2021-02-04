@@ -33,7 +33,10 @@ Ftylog *AlertsFlexibleAuditLogManager::_alertsauditlog = nullptr;
 //  init audit logger
 void AlertsFlexibleAuditLogManager::init (const char* configLogFile)
 {
-    _alertsauditlog = ftylog_new ("alerts-flexible-audit", configLogFile);
+    if (!_alertsauditlog)
+    {
+        _alertsauditlog = ftylog_new ("alerts-flexible-audit", configLogFile);
+    }
 }
 
 //  deinit audit logger

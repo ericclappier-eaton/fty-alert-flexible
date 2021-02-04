@@ -48,7 +48,7 @@ s_get (zconfig_t *config, const char* key, const char*dfl) {
 
 int main (int argc, char *argv [])
 {
-    const char * logConfigFile = "";
+    const char * logConfigFile = FTY_COMMON_LOGGING_DEFAULT_CFG;
     ftylog_setInstance("fty-alert-flexible","");
     bool  verbose               = false;
     const char *endpoint        = ENDPOINT;
