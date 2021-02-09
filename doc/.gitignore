@@ -11,6 +11,8 @@
 *.xml7
 
 # Ignore the source doc texts generated from program sources
+fty_alert_flexible_audit_log.txt
+fty_alert_flexible_audit_log.doc
 flexible_alert.txt
 flexible_alert.doc
 fty-alert-flexible.txt

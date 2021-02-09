@@ -13,4 +13,4 @@ malamute
     assets_pattern = gpiosensor-.*|sts-.*|ups-.*
 
 log
-    config = /etc/fty/ftylog.cfg
+    config = /etc/fty/fty-alert-flexible/fty-alert-flexible-log.cfg

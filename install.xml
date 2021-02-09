@@ -18,4 +18,5 @@ Installation model
     <item path = "/usr/share/fty-alert-flexible/rules" name = "../src/selftest-ro/rules/load.rule" />
     <item path = "/usr/share/fty-alert-flexible/rules" name = "../src/selftest-ro/rules/ups.rule" />
     <item path = "/usr/share/fty-alert-flexible/rules" name = "../src/selftest-ro/rules/threshold.rule" />
+    <item path = "/etc/fty/fty-alert-flexible" name = "../src/fty-alert-flexible-log.cfg" />
 </install>

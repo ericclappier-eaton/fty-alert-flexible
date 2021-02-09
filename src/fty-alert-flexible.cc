@@ -27,6 +27,7 @@
 */
 
 #include "fty_alert_flexible_classes.h"
+#include "fty_alert_flexible_audit_log.h"
 
 #define ACTOR_NAME      "fty-alert-flexible"
 #define ENDPOINT        "ipc://@/malamute"
@@ -47,7 +48,7 @@ s_get (zconfig_t *config, const char* key, const char*dfl) {
 
 int main (int argc, char *argv [])
 {
-    const char * logConfigFile = "";
+    const char * logConfigFile = FTY_COMMON_LOGGING_DEFAULT_CFG;
     ftylog_setInstance("fty-alert-flexible","");
     bool  verbose               = false;
     const char *endpoint        = ENDPOINT;
@@ -125,10 +126,13 @@ int main (int argc, char *argv [])
         log_error ("Failed to load config file %s",config_file);
     }
 
-    if (!streq(logConfigFile,""))
+    if (!streq(logConfigFile, ""))
     {
-        log_debug("Try to load log4cplus configuration file : %s",logConfigFile);
-        ftylog_setConfigFile(ftylog_getInstance(),logConfigFile);
+        log_debug("Try to load log4cplus configuration file : %s", logConfigFile);
+        ftylog_setConfigFile(ftylog_getInstance(), logConfigFile);
+
+        // initialize log for auditability
+        AlertsFlexibleAuditLogManager::init(logConfigFile);
     }
 
     if (verbose)
@@ -161,5 +165,9 @@ int main (int argc, char *argv [])
     }
     log_debug ("fty_alert_flexible - exited");
     zactor_destroy (&server);
+
+    // release audit context
+    AlertsFlexibleAuditLogManager::deinit();
+
     return 0;
 }
