@@ -1004,8 +1004,8 @@ rule_test (bool verbose)
     // src/selftest-ro; if your test creates filesystem objects, please
     // do so under src/selftest-rw. They are defined below along with a
     // usecase (asert) to make compilers happy.
-    #define SELFTEST_DIR_RO "src/selftest-ro"
-    #define SELFTEST_DIR_RW "src/selftest-rw"
+    #define SELFTEST_DIR_RO "selftest-ro"
+    #define SELFTEST_DIR_RW "selftest-rw"
 
     #define SELFTEST_DIR_RULES SELFTEST_DIR_RO"/rules"
 

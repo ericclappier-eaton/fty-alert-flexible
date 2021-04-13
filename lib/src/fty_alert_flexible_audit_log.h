@@ -26,9 +26,6 @@
     #define __cplusplus
 #endif
 
-#include <fty_log.h>
-#include "fty_alert_flexible_library.h"
-
 /* Prints message in Audit Log with DEBUG level. */
 #define log_debug_alarms_flexible_audit(...) \
         log_debug_log(AlertsFlexibleAuditLogManager::getInstance(), __VA_ARGS__);
@@ -58,7 +55,6 @@ private:
     static Ftylog *_alertsauditlog;
 
 public:
-
     // Return singleton Audit Ftylog instance
     static Ftylog* getInstance ();
     static void init (const char* configLogFile);

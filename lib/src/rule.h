@@ -119,7 +119,7 @@ FTY_ALERT_FLEXIBLE_PRIVATE char *
 
 //  Evaluate rule
 FTY_ALERT_FLEXIBLE_PRIVATE void
-rule_evaluate (rule_t *self, zlist_t *params, const char *iname, const char *ename, int *result, char **message);
+    rule_evaluate (rule_t *self, zlist_t *params, const char *iname, const char *ename, int *result, char **message);
 
 //  @end
 

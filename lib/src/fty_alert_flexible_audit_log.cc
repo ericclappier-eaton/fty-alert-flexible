@@ -26,7 +26,7 @@
 @end
 */
 
-#include "fty_alert_flexible_audit_log.h"
+#include "fty_alert_flexible_classes.h"
 
 Ftylog *AlertsFlexibleAuditLogManager::_alertsauditlog = nullptr;
 

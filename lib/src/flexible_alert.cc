@@ -28,7 +28,6 @@
 
 #include "fty_alert_flexible_classes.h"
 
-
 #define ANSI_COLOR_WHITE_ON_BLUE  "\x1b[44;97m"
 #define ANSI_COLOR_BOLD    "\x1b[1;39m"
 #define ANSI_COLOR_RED     "\x1b[1;31m"
@@ -45,6 +44,8 @@ struct _flexible_alert_t {
     zhash_t *enames;
     mlm_client_t *mlm;
 };
+
+typedef struct _flexible_alert_t flexible_alert_t;
 
 static void rule_freefn (void *rule)
 {
@@ -77,7 +78,7 @@ static void ename_freefn (void *ename)
 //  --------------------------------------------------------------------------
 //  Create a new flexible_alert
 
-flexible_alert_t *
+static flexible_alert_t *
 flexible_alert_new (void)
 {
     flexible_alert_t *self = (flexible_alert_t *) zmalloc (sizeof (flexible_alert_t));
@@ -95,7 +96,7 @@ flexible_alert_new (void)
 //  --------------------------------------------------------------------------
 //  Destroy the flexible_alert
 
-void
+static void
 flexible_alert_destroy (flexible_alert_t **self_p)
 {
     assert (self_p);
@@ -116,7 +117,7 @@ flexible_alert_destroy (flexible_alert_t **self_p)
 //  --------------------------------------------------------------------------
 //  Load one rule from path. Returns valid rule_t* on success, else NULL.
 
-rule_t*
+static rule_t*
 flexible_alert_load_one_rule (flexible_alert_t *self, const char *fullpath)
 {
     rule_t *rule = rule_new();
@@ -135,7 +136,7 @@ flexible_alert_load_one_rule (flexible_alert_t *self, const char *fullpath)
 //  --------------------------------------------------------------------------
 //  Load all rules in directory. Rule MUST have ".rule" extension.
 
-void
+static void
 flexible_alert_load_rules (flexible_alert_t *self, const char *path)
 {
     if (!self || !path) return;
@@ -166,7 +167,7 @@ flexible_alert_load_rules (flexible_alert_t *self, const char *path)
     closedir(dir);
 }
 
-void
+static void
 flexible_alert_send_alert (flexible_alert_t *self, rule_t *rule, const char *asset, int result, const char *message, int ttl)
 {
     char *severity = (char*) "OK";
@@ -210,7 +211,7 @@ flexible_alert_send_alert (flexible_alert_t *self, rule_t *rule, const char *ass
     zmsg_destroy (&alert);
 }
 
-void
+static void
 flexible_alert_evaluate (flexible_alert_t *self, rule_t *rule, const char *assetname, const char *ename)
 {
     zlist_t *params = zlist_new ();
@@ -297,7 +298,7 @@ flexible_alert_evaluate (flexible_alert_t *self, rule_t *rule, const char *asset
 //  --------------------------------------------------------------------------
 //  drop expired metrics
 
-void
+static void
 flexible_alert_clean_metrics (flexible_alert_t *self)
 {
     zlist_t *topics = zhash_keys (self->metrics);
@@ -316,7 +317,7 @@ flexible_alert_clean_metrics (flexible_alert_t *self)
 
 // --------------------------------------------------------------------------
 // returns true if metric message belong to gpi sensor
-bool
+static bool
 is_gpi_metric (fty_proto_t* metric)
 {
     assert (metric);
@@ -332,7 +333,7 @@ is_gpi_metric (fty_proto_t* metric)
 //  --------------------------------------------------------------------------
 //  Function handles incoming metrics, drives lua evaluation
 
-void
+static void
 flexible_alert_handle_metric (flexible_alert_t *self, fty_proto_t **ftymsg_p, bool isShm)
 {
     if (!self || !ftymsg_p || !*ftymsg_p) return;
@@ -417,7 +418,7 @@ flexible_alert_handle_metric (flexible_alert_t *self, fty_proto_t **ftymsg_p, bo
     zstr_free(&qty_dup);
 }
 
-int
+static int
 ask_for_sensor (flexible_alert_t *self, const char* sensor_name)
 {
 
@@ -444,7 +445,7 @@ ask_for_sensor (flexible_alert_t *self, const char* sensor_name)
 //  --------------------------------------------------------------------------
 //  Function handles infoming metric sensors, fix message and pass it to metrics evaluation
 
-void
+static void
 flexible_alert_handle_metric_sensor (flexible_alert_t *self, fty_proto_t **ftymsg_p)
 {
     if (!self || !ftymsg_p || !*ftymsg_p) return;
@@ -517,7 +518,7 @@ is_rule_for_this_asset (rule_t *rule, fty_proto_t *ftymsg)
 //  When asset message comes, function checks if we have rule for it and stores
 //  list of rules valid for this asset.
 
-void
+static void
 flexible_alert_handle_asset (flexible_alert_t *self, fty_proto_t *ftymsg)
 {
     if (!self || !ftymsg) return;
@@ -573,7 +574,7 @@ flexible_alert_handle_asset (flexible_alert_t *self, fty_proto_t *ftymsg)
 //  type can be all or flexible in this agent
 //  class is just for compatibility with alert engine protocol
 
-zmsg_t *
+static zmsg_t *
 flexible_alert_list_rules (flexible_alert_t *self, char *type, char *ruleclass)
 {
     if (! self || ! type) return NULL;
@@ -610,7 +611,7 @@ flexible_alert_list_rules (flexible_alert_t *self, char *type, char *ruleclass)
 //  --------------------------------------------------------------------------
 //  handling requests for getting rule.
 
-zmsg_t *
+static zmsg_t *
 flexible_alert_get_rule (flexible_alert_t *self, char *name)
 {
     if (! self || !name) return NULL;
@@ -633,7 +634,7 @@ flexible_alert_get_rule (flexible_alert_t *self, char *name)
 //  --------------------------------------------------------------------------
 //  handling requests for deleting rule.
 
-zmsg_t *
+static zmsg_t *
 flexible_alert_delete_rule (flexible_alert_t *self, const char *name, const char *dir)
 {
     if (! self || !name || !dir) return NULL;
@@ -666,7 +667,7 @@ flexible_alert_delete_rule (flexible_alert_t *self, const char *name, const char
 //  --------------------------------------------------------------------------
 //  handling requests for adding rule.
 
-zmsg_t *
+static zmsg_t *
 flexible_alert_add_rule (flexible_alert_t *self, const char *json, const char *old_name, bool incomplete, const char *dir)
 {
     if (! self || !json || !dir) return NULL;
@@ -739,7 +740,7 @@ flexible_alert_add_rule (flexible_alert_t *self, const char *json, const char *o
     return reply;
 }
 
-void
+static void
 flexible_alert_metric_polling (zsock_t *pipe, void *args)
 {
     zpoller_t *poller = zpoller_new (pipe, NULL);
@@ -969,25 +970,25 @@ flexible_alert_actor (zsock_t *pipe, void *args)
 void
 flexible_alert_test (bool verbose)
 {
-    printf (" * flexible_alert:\n");
-    ftylog_setInstance("flexible_alert_test","");
-    if (verbose)
-        ftylog_setVeboseMode(ftylog_getInstance());
-
-    std::string logConfigFile = "src/fty-alert-flexible-log.cfg";
-    ManageFtyLog::getInstanceFtylog()->setConfigFile(logConfigFile);
-
-    // initialize log for auditability
-    AlertsFlexibleAuditLogManager::init(logConfigFile.c_str());
-
     // Note: If your selftest reads SCMed fixture data, please keep it in
-    // src/selftest-ro; if your test creates filesystem objects, please
+    // selftest-ro; if your test creates filesystem objects, please
     // do so under src/selftest-rw. They are defined below along with a
     // usecase (asert) to make compilers happy.
-    const char *SELFTEST_DIR_RO = "src/selftest-ro";
-    const char *SELFTEST_DIR_RW = "src/selftest-rw";
+    const char *SELFTEST_DIR_RO = "selftest-ro";
+    const char *SELFTEST_DIR_RW = "selftest-rw";
     assert (SELFTEST_DIR_RO);
     assert (SELFTEST_DIR_RW);
+
+    printf (" * flexible_alert:\n");
+
+    ftylog_setInstance("flexible_alert_test","");
+    if (verbose)
+        ftylog_setVerboseMode(ftylog_getInstance());
+
+    // initialize log for auditability
+    std::string loggingConfigFile = std::string("./") + std::string(SELFTEST_DIR_RO) + "/logging-test.cfg";
+    AlertsFlexibleAuditLogManager::init(loggingConfigFile.c_str());
+
     fty_shm_set_test_dir(SELFTEST_DIR_RW);
     fty_shm_set_default_polling_interval(5);
     // std::string str_SELFTEST_DIR_RO = std::string(SELFTEST_DIR_RO);
