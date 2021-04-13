@@ -11,7 +11,6 @@ etn_target(exe ${PROJECT_NAME}
         czmq
         fty_proto
         fty_common_logging
-        fty_common_mlm
     USES_PRIVATE
         ${PROJECT_NAME}-lib
 )

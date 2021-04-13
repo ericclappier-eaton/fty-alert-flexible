@@ -18,9 +18,7 @@ etn_target(static ${PROJECT_NAME}-lib
         cxxtools
         fty_shm
         fty_proto
-        fty_common
         fty_common_logging
-        fty_common_mlm
     PRIVATE
 )
 
@@ -40,9 +38,7 @@ if (BUILD_TESTING)
             cxxtools
             fty_shm
             fty_proto
-            fty_common
             fty_common_logging
-            fty_common_mlm
             Catch2::Catch2
             stdc++fs
             log4cplus
