@@ -1,10 +1,8 @@
-#   fty-alert-flexible configuration
-# This is a skeleton created by zproject.
-# You can add hand-written code here.
+#   @PROJECT_NAME@ configuration
 
 server
     verbose = 0         #   Do verbose logging of activity?
-    rules = /var/lib/fty/fty-alert-flexible/rules
+    rules = @AGENT_VAR_DIR@/rules
 
 malamute
     endpoint = ipc://@/malamute                     # Malamute endpoint
@@ -13,4 +11,4 @@ malamute
     assets_pattern = gpiosensor-.*|sts-.*|ups-.*
 
 log
-    config = /etc/fty/fty-alert-flexible/fty-alert-flexible-log.cfg
+    config = @AGENT_ETC_DIR@/fty-alert-flexible-log.cfg

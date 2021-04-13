@@ -19,10 +19,9 @@ log4cplus.appender.syslog.layout.ConversionPattern=%D{%Y-%m-%d %H:%M:%S} %c [%-5
 log4cplus.logger.alerts-flexible-audit=DEBUG, alerts-flexible-audit-log, syslog, console
 
 log4cplus.appender.alerts-flexible-audit-log=log4cplus::RollingFileAppender
-log4cplus.appender.alerts-flexible-audit-log.File=/var/log/app-audit/alarms-audit.log
+log4cplus.appender.alerts-flexible-audit-log.File=@AGENT_AUDITLOG_FILE@
 log4cplus.appender.alerts-flexible-audit-log.MaxFileSize=16MB
 log4cplus.appender.alerts-flexible-audit-log.MaxBackupIndex=3
 log4cplus.appender.alerts-flexible-audit-log.Threshold=INFO
 log4cplus.appender.alerts-flexible-audit-log.layout=log4cplus::PatternLayout
 log4cplus.appender.alerts-flexible-audit-log.layout.ConversionPattern=%D{%Y-%m-%d %H:%M:%S} %c [%-5p] %F:%L %m%n
-
