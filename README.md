@@ -1,7 +1,18 @@
 # fty-alert-flexible
 
-This 42ITy agent listen for metrics and produces alerts. Pattern 
-subscription about METRICS stream is defined by 'malamute/metrics_pattern' 
+## How to build
+
+```bash
+mkdir build && cd build
+cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=usr -DBUILD_TESTING=On ..
+make
+sudo make install
+```
+
+## About
+
+This 42ITy agent listen for metrics and produces alerts. Pattern
+subscription about METRICS stream is defined by 'malamute/metrics_pattern'
 key in fty-alert-flexible.cfg configuration file. Rules
 for creating alerts are specified with json and lua. All rule files
 are loaded from one directory specified by command line parameter.
@@ -12,7 +23,8 @@ package to the shared data directory.
 
 Evaluation function is written in Lua.
 
-```json
+```bash
+json
 {
     "name"          : "upsload",
     "description"   : "UPS load",
@@ -42,7 +54,6 @@ Evaluation function is written in Lua.
          end
     "
 }
-
 ```
 
 Note: Yes this is not valid json, but the parser used tolerates multi-line
