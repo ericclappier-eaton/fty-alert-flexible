@@ -12,4 +12,4 @@ find_package(fty-cmake PATHS ${CMAKE_BINARY_DIR})
 ########################################################################################################################
 
 add_subdirectory(lib)
-#add_subdirectory(agent)
+add_subdirectory(agent)

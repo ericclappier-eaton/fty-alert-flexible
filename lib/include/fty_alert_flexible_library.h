@@ -64,4 +64,20 @@
 #   endif
 #endif
 
+#include <czmq.h>
+
+#include "../src/fty_alert_flexible_audit_log.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// Flexible alert actor
+FTY_ALERT_FLEXIBLE_EXPORT void
+    flexible_alert_actor (zsock_t *pipe, void *args);
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif

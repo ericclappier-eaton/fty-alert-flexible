@@ -26,8 +26,12 @@
 @end
 */
 
-#include "fty_alert_flexible_classes.h"
-#include "fty_alert_flexible_audit_log.h"
+#include <czmq.h>
+#include <fty_log.h>
+#include <fty_proto.h>
+#include <fty_common_mlm.h>
+
+#include "fty_alert_flexible_library.h"
 
 #define ACTOR_NAME      "fty-alert-flexible"
 #define ENDPOINT        "ipc://@/malamute"
@@ -35,7 +39,6 @@
 #define CONFIG          "/etc/fty-alert-flexible/fty-alert-flexible.cfg"
 #define METRICS_PATTERN ".*"
 #define ASSETS_PATTERN  ".*"
-#define LOG_CONFIG      "/etc/fty/ftylog.cfg"
 
 static const char*
 s_get (zconfig_t *config, const char* key, const char*dfl) {
@@ -48,8 +51,7 @@ s_get (zconfig_t *config, const char* key, const char*dfl) {
 
 int main (int argc, char *argv [])
 {
-    const char * logConfigFile = FTY_COMMON_LOGGING_DEFAULT_CFG;
-    ftylog_setInstance("fty-alert-flexible","");
+    const char *logConfigFile = FTY_COMMON_LOGGING_DEFAULT_CFG;
     bool  verbose               = false;
     const char *endpoint        = ENDPOINT;
     bool isCmdEndpoint           = false;
@@ -58,6 +60,8 @@ int main (int argc, char *argv [])
     bool isCmdRules              = false;
     const char *metrics_pattern = METRICS_PATTERN;
     const char *assets_pattern = ASSETS_PATTERN;
+
+    ftylog_setInstance("fty-alert-flexible", FTY_COMMON_LOGGING_DEFAULT_CFG);
 
     int argn;
     for (argn = 1; argn < argc; argn++) {
@@ -71,7 +75,7 @@ int main (int argc, char *argv [])
             puts ("  -h|--help             this information");
             puts ("  -e|--endpoint         malamute endpoint [ipc://@/malamute]");
             puts ("  -r|--rules            directory with rules [./rules]");
-            puts ("  -c|--config           path to config file[/etc/fty-alert-flexible/fty-alert-flexible.cfg]\n");
+            puts ("  -c|--config           path to config file [/etc/fty-alert-flexible/fty-alert-flexible.cfg]\n");
             return 0;
         }
         else if (streq (argv [argn], "--verbose") || streq (argv [argn], "-v")) {
@@ -97,12 +101,15 @@ int main (int argc, char *argv [])
         }
         else {
             printf ("Unknown option: %s\n", argv [argn]);
-            return 1;
+            return EXIT_FAILURE;
         }
     }
+
     //parse config file
     zconfig_t *config = zconfig_load(config_file);
     if (config) {
+        log_info("fty_alert_flexible - Loading config file '%s'", config_file);
+
         // verbose
         if (streq (zconfig_get (config, "server/verbose", (verbose?"1":"0")), "1")) {
             verbose = true;
@@ -122,13 +129,15 @@ int main (int argc, char *argv [])
         metrics_pattern = s_get (config, "malamute/metrics_pattern", metrics_pattern);
 
         logConfigFile = s_get (config, "log/config", "");
-    } else {
-        log_error ("Failed to load config file %s",config_file);
+
+    }
+    else {
+        log_error ("fty_alert_flexible - Failed to load config file %s", config_file);
     }
 
     if (!streq(logConfigFile, ""))
     {
-        log_debug("Try to load log4cplus configuration file : %s", logConfigFile);
+        log_debug("fty_alert_flexible - Load log4cplus configuration file '%s'", logConfigFile);
         ftylog_setConfigFile(ftylog_getInstance(), logConfigFile);
 
         // initialize log for auditability
@@ -136,16 +145,23 @@ int main (int argc, char *argv [])
     }
 
     if (verbose)
-        ftylog_setVeboseMode(ftylog_getInstance());
+        ftylog_setVerboseMode(ftylog_getInstance());
 
-    log_debug ("fty_alert_flexible - started");
-    //  Insert main code here
+    log_debug ("fty_alert_flexible - starting...");
+
     zlist_t *params = zlist_new ();
+    if (!params) {
+        log_fatal("fty_alert_flexible - Failed to create params list");
+        return EXIT_FAILURE;
+    }
     zlist_append (params, (void*) assets_pattern);
     zlist_append (params, (void*) metrics_pattern);
 
     zactor_t *server = zactor_new (flexible_alert_actor, (void*) params);
-    assert (server);
+    if (!server) {
+        log_fatal("fty_alert_flexible - Failed to create main actor");
+        return EXIT_FAILURE;
+    }
     zstr_sendx (server, "BIND", endpoint, ACTOR_NAME, NULL);
     zstr_sendx (server, "PRODUCER", FTY_PROTO_STREAM_ALERTS_SYS, NULL);
     //zstr_sendx (server, "CONSUMER", FTY_PROTO_STREAM_METRICS, metrics_pattern, NULL);
@@ -159,15 +175,20 @@ int main (int argc, char *argv [])
 
     zstr_sendx (server, "LOADRULES", rules, NULL);
 
+    log_debug ("fty_alert_flexible - started");
+
     while (!zsys_interrupted) {
         zmsg_t *msg = zactor_recv (server);
         zmsg_destroy (&msg);
     }
-    log_debug ("fty_alert_flexible - exited");
+
+    log_debug ("fty_alert_flexible - ended");
+
     zactor_destroy (&server);
+    zconfig_destroy(&config);
 
     // release audit context
     AlertsFlexibleAuditLogManager::deinit();
 
-    return 0;
+    return EXIT_SUCCESS;
 }

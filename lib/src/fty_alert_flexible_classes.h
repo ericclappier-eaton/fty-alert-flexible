@@ -33,24 +33,6 @@
 #include <cxxtools/allocator.h>
 #include <fty_shm.h>
 
-#if 0
-
-//  Opaque class structures to allow forward references
-#ifndef RULE_T_DEFINED
-typedef struct _rule_t rule_t;
-#define RULE_T_DEFINED
-#endif
-#ifndef VSJSON_T_DEFINED
-typedef struct _vsjson_t vsjson_t;
-#define VSJSON_T_DEFINED
-#endif
-#ifndef METRICS_T_DEFINED
-typedef struct _metrics_t metrics_t;
-#define METRICS_T_DEFINED
-#endif
-
-#endif //0
-
 #if defined (__WINDOWS__)
 #   if defined FTY_ALERT_FLEXIBLE_STATIC
 #       define FTY_ALERT_FLEXIBLE_EXPORT
@@ -84,33 +66,5 @@ typedef struct _metrics_t metrics_t;
 #include "vsjson.h"
 #include "rule.h"
 #include "flexible_alert.h"
-
-
-#if 0
-
-//  *** To avoid double-definitions, only define if building without draft ***
-#ifndef FTY_ALERT_FLEXIBLE_BUILD_DRAFT_API
-
-//  *** Draft method, defined for internal use only ***
-//  Self test of this class.
-FTY_ALERT_FLEXIBLE_PRIVATE void
-    rule_test (bool verbose);
-
-//  *** Draft method, defined for internal use only ***
-//  Self test of this class.
-FTY_ALERT_FLEXIBLE_PRIVATE void
-    vsjson_test (bool verbose);
-
-//  *** Draft method, defined for internal use only ***
-//  Self test of this class.
-FTY_ALERT_FLEXIBLE_PRIVATE void
-    metrics_test (bool verbose);
-
-//  Self test for private classes
-FTY_ALERT_FLEXIBLE_PRIVATE void
-    fty_alert_flexible_private_selftest (bool verbose, const char *subtest);
-
-#endif // FTY_ALERT_FLEXIBLE_BUILD_DRAFT_API
-#endif //0
 
 #endif
