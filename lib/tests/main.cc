@@ -40,7 +40,7 @@ all_tests [] = {
 static void
 test_runall (bool verbose)
 {
-    printf ("Running etn-amqp selftests...\n");
+    printf ("Running fty-alert-flexible selftests...\n");
     test_item_t *item;
     for (item = all_tests; item->testname; item++) {
         if (item->test)
