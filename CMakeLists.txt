@@ -32,6 +32,10 @@ set(AGENT_AUDITLOG_FILE "${AGENT_AUDITLOG_DIR}/alarms-audit.log")
 # alert audit-log receipt -> var/log/app-audit
 install(DIRECTORY DESTINATION ${AGENT_AUDITLOG_DIR})
 
+## .conf file -> lib/tmpfiles.d/
+configure_file("${PROJECT_SOURCE_DIR}/resources/${PROJECT_NAME}.conf" "${PROJECT_BINARY_DIR}/resources/${PROJECT_NAME}.conf" @ONLY)
+install(FILES "${PROJECT_BINARY_DIR}/resources/${PROJECT_NAME}.conf" DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/tmpfiles.d/")
+
 # cfg -> etc/fty
 configure_file("${PROJECT_SOURCE_DIR}/resources/fty-alert-flexible.cfg.in" "${PROJECT_BINARY_DIR}/resources/fty-alert-flexible.cfg" @ONLY)
 install(FILES "${PROJECT_BINARY_DIR}/resources/fty-alert-flexible.cfg" DESTINATION ${AGENT_ETC_DIR})

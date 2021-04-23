@@ -23,14 +23,16 @@ EnvironmentFile=-/etc/default/bios
 EnvironmentFile=-/etc/default/bios__%n.conf
 EnvironmentFile=-/etc/default/fty
 EnvironmentFile=-/etc/default/fty__%n.conf
+
 # auditability var/log/app-audit
-ExecStartPre=+/bin/touch @AGENT_AUDITLOG_FILE@
-ExecStartPre=+/bin/chown -R @AGENT_USER@:www-data @AGENT_AUDITLOG_DIR@
-ExecStartPre=+/bin/chmod 771 @AGENT_AUDITLOG_DIR@
-ExecStartPre=+/bin/chmod 661 @AGENT_AUDITLOG_FILE@
+#ExecStartPre=+/bin/touch @AGENT_AUDITLOG_FILE@
+#ExecStartPre=+/bin/chown -R @AGENT_USER@:www-data @AGENT_AUDITLOG_DIR@
+#ExecStartPre=+/bin/chmod 771 @AGENT_AUDITLOG_DIR@
+#ExecStartPre=+/bin/chmod 661 @AGENT_AUDITLOG_FILE@
 # etc var
-ExecStartPre=+/bin/chown -R @AGENT_USER@ @AGENT_ETC_DIR@
-ExecStartPre=+/bin/chown -R @AGENT_USER@ @AGENT_VAR_DIR@
+#ExecStartPre=+/bin/chown -R @AGENT_USER@ @AGENT_ETC_DIR@
+#ExecStartPre=+/bin/chown -R @AGENT_USER@ @AGENT_VAR_DIR@
+
 # exec
 ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/@PROJECT_NAME@ --rules @AGENT_VAR_DIR@/rules
 
