@@ -11,4 +11,4 @@ malamute
     assets_pattern = gpiosensor-.*|sts-.*|ups-.*
 
 log
-    config = @AGENT_ETC_DIR@/fty-alert-flexible-log.cfg
+    config = @AGENT_ETC_FTY_DIR@/fty-alert-flexible-log.cfg

@@ -23,7 +23,8 @@ add_subdirectory(agent)
 ## and installed in /usr/share/bios/fty-autoconfig
 
 set(AGENT_USER "bios")
-set(AGENT_ETC_DIR "${CMAKE_INSTALL_FULL_SYSCONFDIR}/fty/${PROJECT_NAME}")
+set(AGENT_ETC_DIR "${CMAKE_INSTALL_FULL_SYSCONFDIR}/${PROJECT_NAME}")
+set(AGENT_ETC_FTY_DIR "${CMAKE_INSTALL_FULL_SYSCONFDIR}/fty/${PROJECT_NAME}")
 set(AGENT_VAR_DIR "${CMAKE_INSTALL_FULL_LOCALSTATEDIR}/lib/fty/${PROJECT_NAME}")
 set(AGENT_SHARE_DIR "${CMAKE_INSTALL_FULL_DATAROOTDIR}/${PROJECT_NAME}")
 set(AGENT_AUDITLOG_DIR "${CMAKE_INSTALL_FULL_LOCALSTATEDIR}/log/app-audit")
@@ -36,14 +37,14 @@ install(DIRECTORY DESTINATION ${AGENT_AUDITLOG_DIR})
 configure_file("${PROJECT_SOURCE_DIR}/resources/${PROJECT_NAME}.conf" "${PROJECT_BINARY_DIR}/resources/${PROJECT_NAME}.conf" @ONLY)
 install(FILES "${PROJECT_BINARY_DIR}/resources/${PROJECT_NAME}.conf" DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/tmpfiles.d/")
 
-# cfg -> etc/fty
+# cfg -> etc
 configure_file("${PROJECT_SOURCE_DIR}/resources/fty-alert-flexible.cfg.in" "${PROJECT_BINARY_DIR}/resources/fty-alert-flexible.cfg" @ONLY)
 install(FILES "${PROJECT_BINARY_DIR}/resources/fty-alert-flexible.cfg" DESTINATION ${AGENT_ETC_DIR})
 install(DIRECTORY DESTINATION ${AGENT_VAR_DIR}/rules)
 
 # logging conf file -> etc/fty
 configure_file("${PROJECT_SOURCE_DIR}/resources/fty-alert-flexible-log.cfg.in" "${PROJECT_BINARY_DIR}/resources/fty-alert-flexible-log.cfg" @ONLY)
-install(FILES "${PROJECT_BINARY_DIR}/resources/fty-alert-flexible-log.cfg" DESTINATION ${AGENT_ETC_DIR})
+install(FILES "${PROJECT_BINARY_DIR}/resources/fty-alert-flexible-log.cfg" DESTINATION ${AGENT_ETC_FTY_DIR})
 
 # service -> lib/systemd/system
 configure_file("${PROJECT_SOURCE_DIR}/resources/fty-alert-flexible.service.in" "${PROJECT_BINARY_DIR}/resources/fty-alert-flexible.service" @ONLY)
