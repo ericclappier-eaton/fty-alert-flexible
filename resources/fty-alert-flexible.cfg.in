@@ -1,0 +1,14 @@
+#   @PROJECT_NAME@ configuration
+
+server
+    verbose = 0         #   Do verbose logging of activity?
+    rules = @AGENT_VAR_DIR@/rules
+
+malamute
+    endpoint = ipc://@/malamute                     # Malamute endpoint
+    #metrics_pattern = .*@gpiosensor-.*|.*@sts-.*    # METRICS consumer pattern
+    metrics_pattern = .*    # METRICS consumer pattern
+    assets_pattern = gpiosensor-.*|sts-.*|ups-.*
+
+log
+    config = @AGENT_ETC_FTY_DIR@/fty-alert-flexible-log.cfg
