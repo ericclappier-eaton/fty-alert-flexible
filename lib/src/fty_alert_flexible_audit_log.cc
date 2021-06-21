@@ -19,38 +19,29 @@
     =========================================================================
 */
 
-/*
-@header
-    fty_alert_flexible_audit_log - Manage alerts audit log
-@discuss
-@end
-*/
+#include "fty_alert_flexible_audit_log.h"
 
-#include "fty_alert_flexible_classes.h"
-
-Ftylog *AlertsFlexibleAuditLogManager::_alertsauditlog = nullptr;
+Ftylog* AlertsFlexibleAuditLogManager::_alertsauditlog = nullptr;
 
 //  init audit logger
-void AlertsFlexibleAuditLogManager::init (const char* configLogFile)
+void AlertsFlexibleAuditLogManager::init(const char* configLogFile)
 {
-    if (!_alertsauditlog)
-    {
-        _alertsauditlog = ftylog_new ("alerts-flexible-audit", configLogFile);
+    if (!_alertsauditlog) {
+        _alertsauditlog = ftylog_new("alerts-flexible-audit", configLogFile);
     }
 }
 
 //  deinit audit logger
-void AlertsFlexibleAuditLogManager::deinit ()
+void AlertsFlexibleAuditLogManager::deinit()
 {
-    if (_alertsauditlog)
-    {
+    if (_alertsauditlog) {
         ftylog_delete(_alertsauditlog);
         _alertsauditlog = nullptr;
     }
 }
 
 //  return alerts audit logger
-Ftylog* AlertsFlexibleAuditLogManager::getInstance ()
+Ftylog* AlertsFlexibleAuditLogManager::getInstance()
 {
     return _alertsauditlog;
 }

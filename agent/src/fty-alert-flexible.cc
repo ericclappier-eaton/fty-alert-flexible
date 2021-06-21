@@ -29,9 +29,8 @@
 #include <czmq.h>
 #include <fty_log.h>
 #include <fty_proto.h>
-#include <fty_common_mlm.h>
-
-#include "fty_alert_flexible_library.h"
+#include "fty_alert_flexible_audit_log.h"
+#include "flexible_alert.h"
 
 #define ACTOR_NAME      "fty-alert-flexible"
 #define ENDPOINT        "ipc://@/malamute"
@@ -43,7 +42,7 @@
 static const char*
 s_get (zconfig_t *config, const char* key, const char*dfl) {
     assert (config);
-    const char *ret = (const char *)zconfig_get (config, key, dfl);
+    const char *ret = reinterpret_cast<const char *>(zconfig_get (config, key, dfl));
     if (!ret || streq (ret, ""))
         return dfl;
     return ret;
@@ -154,10 +153,10 @@ int main (int argc, char *argv [])
         log_fatal("fty_alert_flexible - Failed to create params list");
         return EXIT_FAILURE;
     }
-    zlist_append (params, (void*) assets_pattern);
-    zlist_append (params, (void*) metrics_pattern);
+    zlist_append (params, const_cast<char*>(assets_pattern));
+    zlist_append (params, const_cast<char*>(metrics_pattern));
 
-    zactor_t *server = zactor_new (flexible_alert_actor, (void*) params);
+    zactor_t *server = zactor_new (flexible_alert_actor, params);
     if (!server) {
         log_fatal("fty_alert_flexible - Failed to create main actor");
         return EXIT_FAILURE;
