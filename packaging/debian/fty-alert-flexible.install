@@ -1,4 +1,0 @@
-usr/bin/fty-alert-flexible
-etc/fty-alert-flexible/fty-alert-flexible.cfg
-lib/systemd/system/fty-alert-flexible.service
-

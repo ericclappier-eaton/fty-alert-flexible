@@ -1,8 +1,7 @@
-/*
-    fty-alert-flexible - agent for creating evaluating alerts
+/*  =========================================================================
+    flexible_alert - Main class for evaluating alerts
 
     Copyright (C) 2016 - 2017 Tomas Halman
-    Copyright (C) 2017 - 2020 Eaton
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -17,19 +16,24 @@
     You should have received a copy of the GNU General Public License along
     with this program; if not, write to the Free Software Foundation, Inc.,
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-
-    NOTE : This Jenkins pipeline script only handles the self-testing of your
-    project. If you also want the successful codebase published or deployed,
-    you can define a helper job - see the reference implementation skeleton at
-    https://github.com/zeromq/zproject/blob/master/Jenkinsfile-deploy.example
-
+    =========================================================================
 */
 
-@Library('etn-ipm2-jenkins') _
+#pragma once
+#include <czmq.h>
+#include <malamute.h>
 
-import params.CmakePipelineParams
-CmakePipelineParams parameters = new CmakePipelineParams()
-//parameters.debugBuildRunTests = false
-//parameters.debugBuildRunMemcheck = false
-etn_ipm2_build_and_tests_pipeline_cmake(parameters)
+struct flexible_alert_t
+{
+    zhash_t*      rules;
+    zhash_t*      assets;
+    zhash_t*      metrics;
+    zhash_t*      enames;
+    mlm_client_t* mlm;
+};
 
+// Flexible alert actor
+void flexible_alert_actor(zsock_t* pipe, void* args);
+
+flexible_alert_t* flexible_alert_new(void);
+void flexible_alert_destroy(flexible_alert_t** self_p);
