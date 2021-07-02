@@ -791,9 +791,10 @@ void flexible_alert_actor(zsock_t* pipe, void* args)
     zlist_append(params, self);
     zactor_t* metric_polling = zactor_new(flexible_alert_metric_polling, params);
 
+    const int POLL_TIMEOUT_MS = 30000; //ms
     zpoller_t* poller = zpoller_new(mlm_client_msgpipe(self->mlm), pipe, NULL);
     while (!zsys_interrupted) {
-        void* which = zpoller_wait(poller, -1);
+        void* which = zpoller_wait(poller, POLL_TIMEOUT_MS);
         if (which == pipe) {
             zmsg_t* msg = zmsg_recv(pipe);
             char*   cmd = zmsg_popstr(msg);
