@@ -9,7 +9,7 @@ File has to have a `.rule` extension. Some example rule files are
 provided in the source code among fixtures for the agent's selftest,
 in `src/selftest-ro/rules` directory, and are installed as part of
 package to the shared data directory.
-
+ 
 Evaluation function is written in Lua.
 
 ```json
