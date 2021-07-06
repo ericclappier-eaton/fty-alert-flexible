@@ -21,27 +21,33 @@
 
 #include "fty_alert_flexible_audit_log.h"
 
-Ftylog* AlertsFlexibleAuditLogManager::_alertsauditlog = nullptr;
+Ftylog* AuditLogManager::_auditLogger = nullptr;
 
 //  init audit logger
-void AlertsFlexibleAuditLogManager::init(const char* configLogFile)
+void AuditLogManager::init()
 {
-    if (!_alertsauditlog) {
-        _alertsauditlog = ftylog_new("alerts-flexible-audit", configLogFile);
+    if (!_auditLogger) {
+        const char* loggerName = "audit/alarms";
+        _auditLogger = ftylog_new(loggerName, FTY_COMMON_LOGGING_DEFAULT_CFG);
+        if (!_auditLogger) {
+            log_error("Audit logger creation failed (%s, %s)",
+                loggerName, FTY_COMMON_LOGGING_DEFAULT_CFG);
+        }
     }
 }
 
 //  deinit audit logger
-void AlertsFlexibleAuditLogManager::deinit()
+void AuditLogManager::deinit()
 {
-    if (_alertsauditlog) {
-        ftylog_delete(_alertsauditlog);
-        _alertsauditlog = nullptr;
+    if (_auditLogger) {
+        ftylog_delete(_auditLogger);
+        _auditLogger = nullptr;
     }
 }
 
-//  return alerts audit logger
-Ftylog* AlertsFlexibleAuditLogManager::getInstance()
+//  return audit logger instance
+Ftylog* AuditLogManager::getInstance()
 {
-    return _alertsauditlog;
+    return _auditLogger;
 }
+
