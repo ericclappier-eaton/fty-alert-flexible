@@ -59,7 +59,7 @@ int main (int argc, char *argv [])
     const char *metrics_pattern = METRICS_PATTERN;
     const char *assets_pattern = ASSETS_PATTERN;
 
-    ManageFtyLog::setInstanceFtylog("fty-alert-FLEXIBLE", FTY_COMMON_LOGGING_DEFAULT_CFG);
+    ManageFtyLog::setInstanceFtylog(ACTOR_NAME, FTY_COMMON_LOGGING_DEFAULT_CFG);
 
     int argn;
     for (argn = 1; argn < argc; argn++) {
