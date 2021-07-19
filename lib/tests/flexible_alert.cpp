@@ -9,7 +9,7 @@ TEST_CASE("flexible alert test")
     const char* SELFTEST_DIR_RW = ".";
 
     // initialize log for auditability
-    AuditLogManager::init();
+    AuditLogManager::init("flexible-server-test");
     // logs audit, see /etc/fty/ftylog.cfg (requires privileges)
     log_debug_alarms_flexible_audit("flexible-server-test audit test %s", "DEBUG");
     log_info_alarms_flexible_audit("flexible-server-test audit test %s", "INFO");

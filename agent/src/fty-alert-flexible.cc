@@ -134,7 +134,7 @@ int main (int argc, char *argv [])
         ftylog_setVerboseMode(ftylog_getInstance());
 
     // initialize log for auditability
-    AuditLogManager::init();
+    AuditLogManager::init(ACTOR_NAME);
 
     log_debug ("fty_alert_flexible - starting...");
 
