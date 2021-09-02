@@ -21,27 +21,38 @@
 
 #include "fty_alert_flexible_audit_log.h"
 
-Ftylog* AlertsFlexibleAuditLogManager::_alertsauditlog = nullptr;
+Ftylog* AuditLogManager::_auditLogger = nullptr;
 
 //  init audit logger
-void AlertsFlexibleAuditLogManager::init(const char* configLogFile)
+void AuditLogManager::init(const std::string& serviceName)
 {
-    if (!_alertsauditlog) {
-        _alertsauditlog = ftylog_new("alerts-flexible-audit", configLogFile);
+    if (!_auditLogger) {
+        const char* loggerName = "audit/alarms";
+        const char* confFileName = FTY_COMMON_LOGGING_DEFAULT_CFG;
+
+        _auditLogger = ftylog_new(loggerName, confFileName);
+        if (!_auditLogger) {
+            log_error("Audit logger initialization failed (%s, %s)", loggerName, confFileName);
+        }
+        else {
+            log_info("Audit logger initialization (%s, %s)", loggerName, confFileName);
+            log_info_alarms_flexible_audit("Audit logger initialization (%s)", serviceName.c_str());
+        }
     }
 }
 
 //  deinit audit logger
-void AlertsFlexibleAuditLogManager::deinit()
+void AuditLogManager::deinit()
 {
-    if (_alertsauditlog) {
-        ftylog_delete(_alertsauditlog);
-        _alertsauditlog = nullptr;
+    if (_auditLogger) {
+        ftylog_delete(_auditLogger);
+        _auditLogger = nullptr;
     }
 }
 
-//  return alerts audit logger
-Ftylog* AlertsFlexibleAuditLogManager::getInstance()
+//  return audit logger instance
+Ftylog* AuditLogManager::getInstance()
 {
-    return _alertsauditlog;
+    return _auditLogger;
 }
+

@@ -20,35 +20,35 @@
 */
 
 #pragma once
+
 #include <fty_log.h>
 
-/// Prints message in Audit Log with DEBUG level.
-#define log_debug_alarms_flexible_audit(...) log_debug_log(AlertsFlexibleAuditLogManager::getInstance(), __VA_ARGS__);
+/* Prints message in Audit Log with DEBUG level. */
+#define log_debug_alarms_flexible_audit(...) log_debug_log(AuditLogManager::getInstance(), __VA_ARGS__);
 
-/// Prints message in Audit Log with INFO level.
-#define log_info_alarms_flexible_audit(...) log_info_log(AlertsFlexibleAuditLogManager::getInstance(), __VA_ARGS__);
+/* Prints message in Audit Log with INFO level. */
+#define log_info_alarms_flexible_audit(...) log_info_log(AuditLogManager::getInstance(), __VA_ARGS__);
 
-/// Prints message in Audit Log with WARNING level
-#define log_warning_alarms_flexible_audit(...)                                                                         \
-    log_warning_log(AlertsFlexibleAuditLogManager::getInstance(), __VA_ARGS__);
+/* Prints message in Audit Log with WARNING level*/
+#define log_warning_alarms_flexible_audit(...) log_warning_log(AuditLogManager::getInstance(), __VA_ARGS__);
 
-/// Prints message in Audit Log with ERROR level
-#define log_error_alarms_flexible_audit(...) log_error_log(AlertsFlexibleAuditLogManager::getInstance(), __VA_ARGS__);
+/* Prints message in Audit Log with ERROR level*/
+#define log_error_alarms_flexible_audit(...) log_error_log(AuditLogManager::getInstance(), __VA_ARGS__);
 
-/// Prints message in Audit Log with FATAL level.
-#define log_fatal_alarms_flexible_audit(...) log_fatal_log(AlertsFlexibleAuditLogManager::getInstance(), __VA_ARGS__);
+/* Prints message in Audit Log with FATAL level. */
+#define log_fatal_alarms_flexible_audit(...) log_fatal_log(AuditLogManager::getInstance(), __VA_ARGS__);
 
-// singleton for logger management
-class AlertsFlexibleAuditLogManager
+// singleton for audit logger management
+class AuditLogManager
 {
 private:
-    AlertsFlexibleAuditLogManager()  = default;
-    ~AlertsFlexibleAuditLogManager() = default;
-    static Ftylog* _alertsauditlog;
+    AuditLogManager()  = default;
+    ~AuditLogManager() = default;
+    static Ftylog* _auditLogger;
 
 public:
     // Return singleton Audit Ftylog instance
     static Ftylog* getInstance();
-    static void    init(const char* configLogFile);
+    static void    init(const std::string& serviceName);
     static void    deinit();
 };

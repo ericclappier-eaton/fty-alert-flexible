@@ -50,7 +50,6 @@ s_get (zconfig_t *config, const char* key, const char*dfl) {
 
 int main (int argc, char *argv [])
 {
-    const char *logConfigFile = FTY_COMMON_LOGGING_DEFAULT_CFG;
     bool  verbose               = false;
     const char *endpoint        = ENDPOINT;
     bool isCmdEndpoint           = false;
@@ -60,7 +59,7 @@ int main (int argc, char *argv [])
     const char *metrics_pattern = METRICS_PATTERN;
     const char *assets_pattern = ASSETS_PATTERN;
 
-    ftylog_setInstance("fty-alert-flexible", FTY_COMMON_LOGGING_DEFAULT_CFG);
+    ManageFtyLog::setInstanceFtylog(ACTOR_NAME, FTY_COMMON_LOGGING_DEFAULT_CFG);
 
     int argn;
     for (argn = 1; argn < argc; argn++) {
@@ -126,25 +125,16 @@ int main (int argc, char *argv [])
         // patterns
         assets_pattern = s_get (config, "malamute/assets_pattern", assets_pattern);
         metrics_pattern = s_get (config, "malamute/metrics_pattern", metrics_pattern);
-
-        logConfigFile = s_get (config, "log/config", "");
-
     }
     else {
         log_error ("fty_alert_flexible - Failed to load config file %s", config_file);
     }
 
-    if (!streq(logConfigFile, ""))
-    {
-        log_debug("fty_alert_flexible - Load log4cplus configuration file '%s'", logConfigFile);
-        ftylog_setConfigFile(ftylog_getInstance(), logConfigFile);
-
-        // initialize log for auditability
-        AlertsFlexibleAuditLogManager::init(logConfigFile);
-    }
-
     if (verbose)
         ftylog_setVerboseMode(ftylog_getInstance());
+
+    // initialize log for auditability
+    AuditLogManager::init(ACTOR_NAME);
 
     log_debug ("fty_alert_flexible - starting...");
 
@@ -187,7 +177,7 @@ int main (int argc, char *argv [])
     zconfig_destroy(&config);
 
     // release audit context
-    AlertsFlexibleAuditLogManager::deinit();
+    AuditLogManager::deinit();
 
     return EXIT_SUCCESS;
 }

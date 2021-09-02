@@ -8,8 +8,15 @@ TEST_CASE("flexible alert test")
     const char* SELFTEST_DIR_RO = "tests/selftest-ro";
     const char* SELFTEST_DIR_RW = ".";
 
-    std::string loggingConfigFile = std::string("./") + std::string(SELFTEST_DIR_RO) + "/logging-test.cfg";
-    AlertsFlexibleAuditLogManager::init(loggingConfigFile.c_str());
+    // initialize log for auditability
+    AuditLogManager::init("flexible-server-test");
+    // logs audit, see /etc/fty/ftylog.cfg (requires privileges)
+    log_debug_alarms_flexible_audit("flexible-server-test audit test %s", "DEBUG");
+    log_info_alarms_flexible_audit("flexible-server-test audit test %s", "INFO");
+    log_warning_alarms_flexible_audit("flexible-server-test audit test %s", "WARNING");
+    log_error_alarms_flexible_audit("flexible-server-test audit test %s", "ERROR");
+    log_fatal_alarms_flexible_audit("flexible-server-test audit test %s", "FATAL");
+    //AuditLogManager::deinit(); return;
 
     fty_shm_set_test_dir(SELFTEST_DIR_RW);
     fty_shm_set_default_polling_interval(5);
@@ -18,6 +25,7 @@ TEST_CASE("flexible alert test")
     flexible_alert_t* self = flexible_alert_new();
     REQUIRE(self);
     flexible_alert_destroy(&self);
+    REQUIRE(!self);
 
     // start malamute
     static const char* endpoint = "inproc://fty-metric-snmp";
@@ -187,4 +195,6 @@ TEST_CASE("flexible alert test")
     // destroy malamute
     zactor_destroy(&malamute);
     fty_shm_delete_test_dir();
+
+    AuditLogManager::deinit();
 }
