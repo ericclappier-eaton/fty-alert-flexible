@@ -91,10 +91,10 @@ alert message. There are global variables set, that you can return.
 ### return values
 
 * OK - no alert, values are in range
-* LOW_CRITICAL -- critical alert, value is too low
-* LOW_WARNING -- warning alert, value is too low
-* HIGH_WARNING -- warning alert, value is too high
-* HIGH_CRITICAL -- critical alert, value is too high
+* LOW_CRITICAL -- critical alert, value is very low
+* LOW_WARNING -- warning alert, value is low
+* HIGH_WARNING -- warning alert, value is high
+* HIGH_CRITICAL -- critical alert, value is very high
 
 There is also WARNING and CRITICAL. Those are equal to HIGH_WARNING and
 HIGH_CRITICAL.
