@@ -70,7 +70,10 @@ static void ename_freefn(void* ename)
 flexible_alert_t* flexible_alert_new(void)
 {
     flexible_alert_t* self = reinterpret_cast<flexible_alert_t*>(zmalloc(sizeof(flexible_alert_t)));
-    assert(self);
+    if (!self)
+        return NULL;
+
+    memset(self, 0, sizeof(flexible_alert_t));
     //  Initialize class properties here
     self->rules   = zhash_new();
     self->assets  = zhash_new();
@@ -86,19 +89,19 @@ flexible_alert_t* flexible_alert_new(void)
 
 void flexible_alert_destroy(flexible_alert_t** self_p)
 {
-    assert(self_p);
-    if (*self_p) {
-        flexible_alert_t* self = *self_p;
-        //  Free class properties here
-        zhash_destroy(&self->rules);
-        zhash_destroy(&self->assets);
-        zhash_destroy(&self->metrics);
-        zhash_destroy(&self->enames);
-        mlm_client_destroy(&self->mlm);
-        //  Free object itself
-        free(self);
-        *self_p = NULL;
-    }
+    if (!(self_p && (*self_p)))
+		return;
+
+    flexible_alert_t* self = *self_p;
+    //  Free class properties here
+    zhash_destroy(&self->rules);
+    zhash_destroy(&self->assets);
+    zhash_destroy(&self->metrics);
+    zhash_destroy(&self->enames);
+    mlm_client_destroy(&self->mlm);
+    //  Free object itself
+    free(self);
+    *self_p = NULL;
 }
 
 //  --------------------------------------------------------------------------
@@ -581,7 +584,7 @@ static zmsg_t* flexible_alert_list_rules(flexible_alert_t* self, char* type, cha
 
     zmsg_addstr(reply, "LIST");
     zmsg_addstr(reply, type);
-    zmsg_addstr(reply, ruleclass ? ruleclass : "");
+    zmsg_addstr(reply, ruleclass);
 
     rule_t* rule = reinterpret_cast<rule_t*>(zhash_first(self->rules));
     while (rule) {
@@ -771,9 +774,8 @@ static void flexible_alert_metric_polling(zsock_t* pipe, void* args)
         }
     }
 
-    log_info("flexible_alert_metric_polling: Terminating.");
+    log_info("flexible_alert_metric_polling: ended.");
 
-    zlist_destroy(&params);
     zpoller_destroy(&poller);
 }
 
@@ -783,7 +785,11 @@ static void flexible_alert_metric_polling(zsock_t* pipe, void* args)
 void flexible_alert_actor(zsock_t* pipe, void* args)
 {
     flexible_alert_t* self = flexible_alert_new();
-    assert(self);
+    if (!self) {
+        log_fatal("flexible_alert_new() failed");
+        return;
+    }
+
     zsock_signal(pipe, 0);
     char* ruledir = NULL;
 
@@ -830,20 +836,22 @@ void flexible_alert_actor(zsock_t* pipe, void* args)
                 } else {
                     log_warning("Unknown command.");
                 }
-
-                zstr_free(&cmd);
             }
+            zstr_free(&cmd);
             zmsg_destroy(&msg);
-        } else if (which == mlm_client_msgpipe(self->mlm)) {
+        }
+        else if (which == mlm_client_msgpipe(self->mlm)) {
             zmsg_t* msg = mlm_client_recv(self->mlm);
             if (fty_proto_is(msg)) {
                 fty_proto_t* fmsg = fty_proto_decode(&msg);
+
                 if (fty_proto_id(fmsg) == FTY_PROTO_ASSET) {
                     const char* address = mlm_client_address(self->mlm);
                     log_trace(ANSI_COLOR_CYAN "Receive PROTO_ASSET %s@%s on stream %s" ANSI_COLOR_RESET,
                         fty_proto_operation(fmsg), fty_proto_name(fmsg), address);
                     flexible_alert_handle_asset(self, fmsg);
-                } else if (fty_proto_id(fmsg) == FTY_PROTO_METRIC) {
+                }
+                else if (fty_proto_id(fmsg) == FTY_PROTO_METRIC) {
                     const char* address = mlm_client_address(self->mlm);
                     log_trace(ANSI_COLOR_CYAN "Receive PROTO_METRIC %s@%s on stream %s" ANSI_COLOR_RESET,
                         fty_proto_type(fmsg), fty_proto_name(fmsg), address);
@@ -862,7 +870,8 @@ void flexible_alert_actor(zsock_t* pipe, void* args)
                     }
                 }
                 fty_proto_destroy(&fmsg);
-            } else if (streq(mlm_client_command(self->mlm), "MAILBOX DELIVER")) {
+            }
+            else if (streq(mlm_client_command(self->mlm), "MAILBOX DELIVER")) {
                 // someone is addressing us directly
                 // protocol frames COMMAND/param1/param2
                 char* cmd = zmsg_popstr(msg);

@@ -116,12 +116,10 @@ int main (int argc, char *argv [])
         if (!isCmdRules){
             rules = s_get (config, "server/rules", rules);
         }
-
         // endpoint
         if (!isCmdEndpoint){
             endpoint = s_get (config, "malamute/endpoint", endpoint);
         }
-
         // patterns
         assets_pattern = s_get (config, "malamute/assets_pattern", assets_pattern);
         metrics_pattern = s_get (config, "malamute/metrics_pattern", metrics_pattern);
@@ -148,6 +146,7 @@ int main (int argc, char *argv [])
 
     zactor_t *server = zactor_new (flexible_alert_actor, params);
     if (!server) {
+        zlist_destroy(&params);
         log_fatal("fty_alert_flexible - Failed to create main actor");
         return EXIT_FAILURE;
     }
@@ -164,17 +163,18 @@ int main (int argc, char *argv [])
 
     zstr_sendx (server, "LOADRULES", rules, NULL);
 
-    log_debug ("fty_alert_flexible - started");
+    log_info ("fty_alert_flexible - started");
 
     while (!zsys_interrupted) {
         zmsg_t *msg = zactor_recv (server);
         zmsg_destroy (&msg);
     }
 
-    log_debug ("fty_alert_flexible - ended");
+    log_info ("fty_alert_flexible - ended");
 
     zactor_destroy (&server);
     zconfig_destroy(&config);
+    zlist_destroy(&params);
 
     // release audit context
     AuditLogManager::deinit();
