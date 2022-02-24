@@ -307,7 +307,6 @@ static void flexible_alert_clean_metrics(flexible_alert_t* self)
     zlist_destroy(&topics);
 }
 
-
 // --------------------------------------------------------------------------
 // returns true if metric message belong to gpi sensor
 static bool is_gpi_metric(fty_proto_t* metric)
@@ -510,7 +509,10 @@ static int is_rule_for_this_asset(rule_t* rule, fty_proto_t* ftymsg)
 //  When asset message comes, function checks if we have rule for it and stores
 //  list of rules valid for this asset.
 
-static void flexible_alert_handle_asset(flexible_alert_t* self, fty_proto_t* ftymsg)
+//fwd decl.
+static zmsg_t* flexible_alert_delete_rule(flexible_alert_t* self, const char* name, const char* ruledir);
+
+static void flexible_alert_handle_asset(flexible_alert_t* self, fty_proto_t* ftymsg, const char* ruledir)
 {
     if (!self || !ftymsg)
         return;
@@ -519,19 +521,35 @@ static void flexible_alert_handle_asset(flexible_alert_t* self, fty_proto_t* fty
 
     const char* operation = fty_proto_operation(ftymsg);
     const char* assetname = fty_proto_name(ftymsg);
+    const char* status = fty_proto_aux_string(ftymsg, FTY_PROTO_ASSET_STATUS, "active");
+    log_debug("handle stream ASSETS operation: %s on %s (status: %s)", operation, assetname, status);
 
-    if (streq(operation, FTY_PROTO_ASSET_OP_DELETE) ||
-        !streq(fty_proto_aux_string(ftymsg, FTY_PROTO_ASSET_STATUS, "active"), "active")) {
+    if (streq(operation, FTY_PROTO_ASSET_OP_DELETE) || !streq(status, "active"))
+    {
         if (zhash_lookup(self->assets, assetname)) {
             zhash_delete(self->assets, assetname);
         }
         if (zhash_lookup(self->enames, assetname)) {
             zhash_delete(self->enames, assetname);
         }
-        return;
-    }
 
-    if (streq(operation, FTY_PROTO_ASSET_OP_UPDATE) || streq(operation, FTY_PROTO_ASSET_OP_INVENTORY)) {
+        std::vector<std::string> rulesToDelete;
+        rule_t* rule = reinterpret_cast<rule_t*>(zhash_first(self->rules));
+        while (rule) {
+            if (rule_asset_exists(rule, assetname)) {
+                //log_trace("rule '%s' is valid for '%s'", rule_name(rule), assetname);
+                rulesToDelete.push_back(rule_name(rule));
+            }
+            rule = reinterpret_cast<rule_t*>(zhash_next(self->rules));
+        }
+
+        for (auto& ruleName : rulesToDelete) {
+            zmsg_t* r = flexible_alert_delete_rule(self, ruleName.c_str(), ruledir);
+            zmsg_destroy(&r);
+        }
+    }
+    else if (streq(operation, FTY_PROTO_ASSET_OP_UPDATE) || streq(operation, FTY_PROTO_ASSET_OP_INVENTORY))
+    {
         zlist_t* functions_for_asset = zlist_new();
         zlist_autofree(functions_for_asset);
 
@@ -590,6 +608,7 @@ static zmsg_t* flexible_alert_list_rules(flexible_alert_t* self, char* type, cha
             char* uistyle = NULL;
             asprintf(&uistyle, "{\"flexible\": %s }", json);
             if (uistyle) {
+                log_trace("LIST add %s", rule_name(rule));
                 zmsg_addstr(reply, uistyle);
                 zstr_free(&uistyle);
             }
@@ -639,6 +658,7 @@ static zmsg_t* flexible_alert_delete_rule(flexible_alert_t* self, const char* na
         char* path = NULL;
         asprintf(&path, "%s/%s.rule", dir, name);
         if (unlink(path) == 0) {
+            log_trace("delete '%s'", path);
             zmsg_addstr(reply, "OK");
             zhash_delete(self->rules, name);
         } else {
@@ -692,6 +712,7 @@ static zmsg_t* flexible_alert_add_rule(
 
         char* path = NULL;
         asprintf(&path, "%s/%s.rule", dir, rule_name(newrule));
+        //log_trace("save rule '%s'", path);
         int r = rule_save(newrule, path);
         if (r != 0) {
             log_error("Error while saving rule %s (%i)", path, r);
@@ -842,7 +863,7 @@ void flexible_alert_actor(zsock_t* pipe, void* args)
                     const char* address = mlm_client_address(self->mlm);
                     log_trace(ANSI_COLOR_CYAN "Receive PROTO_ASSET %s@%s on stream %s" ANSI_COLOR_RESET,
                         fty_proto_operation(fmsg), fty_proto_name(fmsg), address);
-                    flexible_alert_handle_asset(self, fmsg);
+                    flexible_alert_handle_asset(self, fmsg, ruledir);
                 } else if (fty_proto_id(fmsg) == FTY_PROTO_METRIC) {
                     const char* address = mlm_client_address(self->mlm);
                     log_trace(ANSI_COLOR_CYAN "Receive PROTO_METRIC %s@%s on stream %s" ANSI_COLOR_RESET,
