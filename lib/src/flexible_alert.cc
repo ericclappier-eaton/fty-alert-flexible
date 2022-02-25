@@ -353,7 +353,7 @@ static void flexible_alert_handle_metric(flexible_alert_t* self, fty_proto_t** f
 
     char* qty_dup = strdup(quantity);
 
-    log_trace("handle metric: assetname: %s, qty: %s, isShm: %s", assetname, qty_dup, (isShm ? "true" : "false"));
+//    log_trace("handle metric: assetname: %s, qty: %s, isShm: %s", assetname, qty_dup, (isShm ? "true" : "false"));
 
     // fix quantity for sensors connected to other sensors
     if (extport) {
@@ -584,22 +584,26 @@ static void flexible_alert_handle_asset(flexible_alert_t* self, fty_proto_t* fty
 
 //  --------------------------------------------------------------------------
 //  handling requests for list of rules.
-//  type can be all or flexible in this agent
-//  class is just for compatibility with alert engine protocol
+//  type can be 'all' or 'flexible'
+//  class (ignored) is just for compatibility with alert engine protocol
 
 static zmsg_t* flexible_alert_list_rules(flexible_alert_t* self, char* type, char* ruleclass)
 {
-    if (!self || !type)
+    if (!(self && type)) {
+        log_error("bad inputs (self: %p, type: %s)", self, type);
         return NULL;
+    }
 
-    zmsg_t* reply = zmsg_new();
-
-    if (!streq(type, "all") && !streq(type, "flexible")) {
+    bool typeIsOk = (streq(type, "all") || streq(type, "flexible"));
+    if (!typeIsOk) {
+        log_warning("type '%s' is invalid", type);
+        zmsg_t* reply = zmsg_new();
         zmsg_addstr(reply, "ERROR");
         zmsg_addstr(reply, "INVALID_TYPE");
         return reply;
     }
 
+    zmsg_t* reply = zmsg_new();
     zmsg_addstr(reply, "LIST");
     zmsg_addstr(reply, type);
     zmsg_addstr(reply, ruleclass);
@@ -613,10 +617,10 @@ static zmsg_t* flexible_alert_list_rules(flexible_alert_t* self, char* type, cha
             if (uistyle) {
                 log_trace("LIST add %s", rule_name(rule));
                 zmsg_addstr(reply, uistyle);
-                zstr_free(&uistyle);
             }
-            zstr_free(&json);
+            zstr_free(&uistyle);
         }
+        zstr_free(&json);
         rule = reinterpret_cast<rule_t*>(zhash_next(self->rules));
     }
     return reply;
@@ -910,8 +914,8 @@ void flexible_alert_actor(zsock_t* pipe, void* args)
                 if (!cmd) {
                     log_error("command is NULL");
                 } else if (streq(cmd, "LIST")) {
-                    // request: LIST/type/class
-                    // reply: LIST/type/class/name1/name2/...nameX
+                    // request: LIST/type/ruleclass
+                    // reply: LIST/type/ruleclass/rule1/.../ruleN
                     // reply: ERROR/reason
                     log_info("%s %s %s", cmd, p1, p2);
                     reply = flexible_alert_list_rules(self, p1, p2);
