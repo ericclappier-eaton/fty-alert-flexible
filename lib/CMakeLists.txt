@@ -20,6 +20,8 @@ etn_target(static ${PROJECT_NAME}-lib
         fty_shm
         fty_proto
         fty_common_logging
+        cxxtools
+        fty_common
     PRIVATE
 )
 
