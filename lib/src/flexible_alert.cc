@@ -27,6 +27,10 @@
 #include <fty_shm.h>
 #include <sstream>
 
+#include <cxxtools/jsondeserializer.h>
+#include <fty_common_json.h>
+#include <fty_common_asset_types.h>
+
 #define ANSI_COLOR_WHITE_ON_BLUE "\x1b[44;97m"
 #define ANSI_COLOR_BOLD          "\x1b[1;39m"
 #define ANSI_COLOR_RED           "\x1b[1;31m"
@@ -585,9 +589,9 @@ static void flexible_alert_handle_asset(flexible_alert_t* self, fty_proto_t* fty
 //  --------------------------------------------------------------------------
 //  handling requests for list of rules.
 //  type can be 'all' or 'flexible'
-//  class (ignored) is just for compatibility with alert engine protocol
+//  rule_class (ignored) is just for compatibility with alert engine protocol
 
-static zmsg_t* flexible_alert_list_rules(flexible_alert_t* self, char* type, char* ruleclass)
+static zmsg_t* flexible_alert_list_rules(flexible_alert_t* self, const char* type, const char* rule_class)
 {
     if (!(self && type)) {
         log_error("bad inputs (self: %p, type: %s)", self, type);
@@ -606,7 +610,7 @@ static zmsg_t* flexible_alert_list_rules(flexible_alert_t* self, char* type, cha
     zmsg_t* reply = zmsg_new();
     zmsg_addstr(reply, "LIST");
     zmsg_addstr(reply, type);
-    zmsg_addstr(reply, ruleclass);
+    zmsg_addstr(reply, rule_class);
 
     rule_t* rule = reinterpret_cast<rule_t*>(zhash_first(self->rules));
     while (rule) {
@@ -624,6 +628,144 @@ static zmsg_t* flexible_alert_list_rules(flexible_alert_t* self, char* type, cha
         rule = reinterpret_cast<rule_t*>(zhash_next(self->rules));
     }
     return reply;
+}
+
+//  --------------------------------------------------------------------------
+//  handling requests for list of rules (version 2).
+//  list rules, with more filters defined in a unique json payload
+//  see fty-alert-engine rules list mailbox with identical interface
+
+static const char* COMMAND_LIST2 = "LIST2";
+
+static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::string& jsonFilters)
+{
+    if (!self) {
+        log_error("bad inputs (self: %p)", self);
+        return NULL;
+    }
+
+    #define RETURN_REPLY_ERROR(reason) { \
+        zmsg_t* msg = zmsg_new(); \
+        zmsg_addstr(msg, "ERROR"); \
+        zmsg_addstr(msg, reason); \
+        return msg; \
+    }
+
+    struct Filter {
+        std::string type;
+        std::string rule_class;
+        std::string asset_type;
+        std::string asset_sub_type;
+        std::string category;
+    };
+    Filter filter;
+
+    // parse rule filter
+    try {
+        cxxtools::SerializationInfo si;
+        JSON::readFromString(jsonFilters, si);
+
+        cxxtools::SerializationInfo* p;
+        if ((p = si.findMember("type")) && !p->isNull())
+            { p->getValue(filter.type); }
+        if ((p = si.findMember("rule_class")) && !p->isNull())
+            { p->getValue(filter.rule_class); }
+        if ((p = si.findMember("asset_type")) && !p->isNull())
+            { p->getValue(filter.asset_type); }
+        if ((p = si.findMember("asset_sub_type")) && !p->isNull())
+            { p->getValue(filter.asset_sub_type); }
+        if ((p = si.findMember("category")) && !p->isNull())
+            { p->getValue(filter.category); }
+    }
+    catch (const std::exception& e) {
+        log_error("%s exception caught reading filter inputs (e: %s)", COMMAND_LIST2, e.what());
+        RETURN_REPLY_ERROR("INVALID_INPUT");
+    }
+
+    // filter.type is regular?
+    if (!filter.type.empty()) {
+        if (!(filter.type == "all" || filter.type == "flexible")) {
+            RETURN_REPLY_ERROR("INVALID_TYPE");
+        }
+    }
+    // filter.asset_type is regular?
+    if (!filter.asset_type.empty()) {
+        auto id = persist::type_to_typeid(filter.asset_type);
+        if (id == persist::asset_type::TUNKNOWN) {
+            RETURN_REPLY_ERROR("INVALID_ASSET_TYPE");
+        }
+    }
+    // filter.asset_sub_type is regular?
+    if (!filter.asset_sub_type.empty()) {
+        auto id = persist::subtype_to_subtypeid(filter.asset_sub_type);
+        if (id == persist::asset_subtype::SUNKNOWN) {
+            RETURN_REPLY_ERROR("INVALID_ASSET_SUB_TYPE");
+        }
+    }
+
+    // function to extract asset referenced by ruleName
+    std::function<std::string(const std::string&)> assetFromRuleName = [](const std::string& ruleName) {
+        std::string asset{ruleName};
+        if (auto pos = asset.rfind("@"); pos != std::string::npos)
+            { asset = asset.substr(pos + 1); }
+        if (auto pos = asset.rfind("-"); pos != std::string::npos)
+            { asset = asset.substr(0, pos); }
+        return asset;
+    };
+
+    // rule match filter? returns true if yes
+    std::function<bool(rule_t*)> match = [&filter,&assetFromRuleName](rule_t* rule) {
+        // filter.type: rule is always 'flexible'
+        // filter.rule_class (ignored): just for compatibility with alert engine protocol
+
+        // asset_type
+        if (!filter.asset_type.empty()) {
+            std::string asset{assetFromRuleName(rule_name(rule))};
+            if (filter.asset_type == "device") { // 'device' exception
+                auto id = persist::subtype_to_subtypeid(asset);
+                if (id == persist::asset_subtype::SUNKNOWN)
+                    { return false; }
+            }
+            else {
+                if (filter.asset_type != asset)
+                    { return false; }
+            }
+        }
+        // asset_sub_type
+        if (!filter.asset_sub_type.empty()) {
+            std::string asset{assetFromRuleName(rule_name(rule))};
+            if (filter.asset_sub_type != asset)
+                { return false; }
+        }
+        //if (!filter.category.empty() && (filter.category != rule->category()))
+        //    { return false; }
+
+        return true; // match
+    };
+
+    zmsg_t* reply = zmsg_new();
+    zmsg_addstr(reply, COMMAND_LIST2);
+    zmsg_addstr(reply, jsonFilters.c_str());
+
+    rule_t* rule = reinterpret_cast<rule_t*>(zhash_first(self->rules));
+    while (rule) {
+        if (match(rule)) {
+            char* json = rule_json(rule);
+            if (json) {
+                char* flexJson = NULL;
+                asprintf(&flexJson, "{\"flexible\": %s}", json);
+                if (flexJson) {
+                    log_trace("%s add %s", COMMAND_LIST2, rule_name(rule));
+                    zmsg_addstr(reply, flexJson);
+                }
+                zstr_free(&flexJson);
+            }
+            zstr_free(&json);
+        }
+        rule = reinterpret_cast<rule_t*>(zhash_next(self->rules));
+    }
+    return reply;
+    #undef RETURN_REPLY_ERROR
 }
 
 //  --------------------------------------------------------------------------
@@ -914,11 +1056,17 @@ void flexible_alert_actor(zsock_t* pipe, void* args)
                 if (!cmd) {
                     log_error("command is NULL");
                 } else if (streq(cmd, "LIST")) {
-                    // request: LIST/type/ruleclass
-                    // reply: LIST/type/ruleclass/rule1/.../ruleN
+                    // request: LIST/type/rule_class
+                    // reply: LIST/type/rule_class/rule1/.../ruleN
                     // reply: ERROR/reason
                     log_info("%s %s %s", cmd, p1, p2);
                     reply = flexible_alert_list_rules(self, p1, p2);
+                } else if (streq(cmd, COMMAND_LIST2)) { // LIST (version 2)
+                    // request: <cmd>/jsonPayload
+                    // reply: <cmd>/jsonPayload/rule1/.../ruleN
+                    // reply: ERROR/reason
+                    log_info("%s %s", cmd, p1);
+                    reply = flexible_alert_list_rules2(self, p1);
                 } else if (streq(cmd, "GET")) {
                     // request: GET/name
                     // reply: OK/rulejson
