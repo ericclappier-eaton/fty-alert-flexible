@@ -22,14 +22,15 @@
 #include "flexible_alert.h"
 #include "fty_alert_flexible_audit_log.h"
 #include "rule.h"
+#include "asset_info.h"
+#include <malamute.h>
 #include <fty_log.h>
 #include <fty_proto.h>
 #include <fty_shm.h>
 #include <sstream>
 
 #include <cxxtools/jsondeserializer.h>
-#include <fty_common_json.h>
-#include <fty_common_asset_types.h>
+#include <fty_common.h>
 
 #define ANSI_COLOR_WHITE_ON_BLUE "\x1b[44;97m"
 #define ANSI_COLOR_BOLD          "\x1b[1;39m"
@@ -37,6 +38,8 @@
 #define ANSI_COLOR_YELLOW        "\x1b[1;33m"
 #define ANSI_COLOR_CYAN          "\x1b[1;36m"
 #define ANSI_COLOR_RESET         "\x1b[0m"
+
+// freefn() collection for zhash_t* item destructors
 
 static void rule_freefn(void* rule)
 {
@@ -54,73 +57,145 @@ static void asset_freefn(void* asset)
     }
 }
 
-void ftymsg_freefn(void* ptr)
+void ftymsg_freefn(void* ftymsg)
 {
-    if (!ptr)
-        return;
-    fty_proto_t* fty = reinterpret_cast<fty_proto_t*>(ptr);
-    fty_proto_destroy(&fty);
+    if (ftymsg) {
+        fty_proto_t* fty = reinterpret_cast<fty_proto_t*>(ftymsg);
+        fty_proto_destroy(&fty);
+    }
 }
 
 static void ename_freefn(void* ename)
 {
-    if (ename)
+    if (ename) {
         free(ename);
+    }
 }
+
+static void asset_info_freefn(void* assetInfo)
+{
+    if (assetInfo) {
+        asset_info_t* info = reinterpret_cast<asset_info_t*>(assetInfo);
+        asset_info_destroy(&info);
+    }
+}
+
+/// our class
+struct flexible_alert_t
+{
+    zhash_t*      rules;     // <rulename, rule_t*>
+    zhash_t*      metrics;   // <metric, fty_proto_t*>
+    zhash_t*      assets;    // <assetiname, zlist_t*<rulename>>
+    zhash_t*      enames;    // <assetiname, char* assetename>
+    zhash_t*      assetInfo; // <assetiname, asset_info_t*>
+    mlm_client_t* mlm;
+};
 
 //  --------------------------------------------------------------------------
 //  Create a new flexible_alert
 
-flexible_alert_t* flexible_alert_new(void)
+static flexible_alert_t* flexible_alert_new(void)
 {
     flexible_alert_t* self = reinterpret_cast<flexible_alert_t*>(zmalloc(sizeof(flexible_alert_t)));
     if (!self)
         return NULL;
 
     memset(self, 0, sizeof(flexible_alert_t));
+
     //  Initialize class properties here
-    self->rules   = zhash_new();
-    self->assets  = zhash_new();
-    self->metrics = zhash_new();
-    self->enames  = zhash_new();
-    zhash_autofree(self->enames);
+    self->rules     = zhash_new();
+    self->metrics   = zhash_new();
+    self->assets    = zhash_new();
+    self->enames    = zhash_new();
+    self->assetInfo = zhash_new();
     self->mlm = mlm_client_new();
+
+    zhash_autofree(self->enames);
+
     return self;
 }
 
 //  --------------------------------------------------------------------------
 //  Destroy the flexible_alert
 
-void flexible_alert_destroy(flexible_alert_t** self_p)
+static void flexible_alert_destroy(flexible_alert_t** self_p)
 {
     if (!(self_p && (*self_p)))
-		return;
+        return;
 
     flexible_alert_t* self = *self_p;
     //  Free class properties here
     zhash_destroy(&self->rules);
-    zhash_destroy(&self->assets);
     zhash_destroy(&self->metrics);
+    zhash_destroy(&self->assets);
     zhash_destroy(&self->enames);
+    zhash_destroy(&self->assetInfo);
     mlm_client_destroy(&self->mlm);
+
     //  Free object itself
     free(self);
     *self_p = NULL;
 }
 
 //  --------------------------------------------------------------------------
+//  Ask the asset agent to republish assets informations
+
+static void s_republish_asset(flexible_alert_t* self, const std::vector<std::string>& assets)
+{
+    if (!(self && self->mlm))
+        return;
+
+    std::string assetsList; // for logs
+
+    zmsg_t* msg = zmsg_new();
+    zmsg_addstr(msg, "REPUBLISH");
+    for (auto& asset : assets) {
+        if (asset.empty())
+            continue;
+        zmsg_addstr(msg, asset.c_str());
+        assetsList += (assetsList.empty() ? "": " ") + asset;
+    }
+
+    if (zmsg_size(msg) < 2) { // nothing to send (assets is empty)
+        log_trace("nothing to REPUBLISH");
+        zmsg_destroy(&msg);
+        return;
+    }
+
+    log_trace("%s REPUBLISH %s", AGENT_FTY_ASSET, assetsList.c_str());
+    int r = mlm_client_sendto(self->mlm, AGENT_FTY_ASSET, "REPUBLISH", NULL, 5000, &msg);
+    zmsg_destroy(&msg);
+    if (r != 0) {
+        log_error("%s REPUBLISH %s failed", AGENT_FTY_ASSET, assetsList.c_str());
+    }
+    else { // consume response
+        msg = mlm_client_recv(self->mlm);
+        zmsg_destroy(&msg);
+    }
+}
+
+//  --------------------------------------------------------------------------
 //  Load one rule from path. Returns valid rule_t* on success, else NULL.
+//  CAUTION: returned rule_t* is referenced in self->rules
 
 static rule_t* flexible_alert_load_one_rule(flexible_alert_t* self, const char* fullpath)
 {
     rule_t* rule = rule_new();
-    int     r    = rule_load(rule, fullpath);
+    int r = rule_load(rule, fullpath);
     if (r == 0) {
         log_info("rule %s loaded", fullpath);
         zhash_update(self->rules, rule_name(rule), rule);
         zhash_freefn(self->rules, rule_name(rule), rule_freefn);
+
+        // update our lists with asset referenced by rule
+        const char* asset = strstr(rule_name(rule), "@");
+        if (asset) {
+            s_republish_asset(self, {asset + 1});
+        }
+
         return rule;
     }
+
     log_error("failed to load rule '%s' (r: %d)", fullpath, r);
     rule_destroy(&rule);
     return NULL;
@@ -215,12 +290,12 @@ static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const 
         fty_proto_t* ftymsg = reinterpret_cast<fty_proto_t*>(zhash_lookup(self->metrics, topic));
         if (!ftymsg) {
             // some metrics are missing
-            zlist_destroy(&params);
             log_trace("abort evaluation of rule %s because %s metric is missing", rule_name(rule), topic);
+            zlist_destroy(&params);
             zstr_free(&topic);
+
             std::stringstream ss;
-            ss << param << " = "
-               << "NaN";
+            ss << param << " = " << "NaN";
             auditValues.push_back(ss.str());
             isMetricMissing = true;
             break;
@@ -369,6 +444,7 @@ static void flexible_alert_handle_metric(flexible_alert_t* self, fty_proto_t** f
         ++qty_len_helper;
         if (*qty_len_helper == '\0') {
             log_error("malformed quantity");
+            zstr_free(&qty_dup);
             return;
         }
         while ((*qty_len_helper != '\0') && (*qty_len_helper != '.'))
@@ -408,7 +484,7 @@ static void flexible_alert_handle_metric(flexible_alert_t* self, fty_proto_t** f
             asprintf(&topic, "%s@%s", qty_dup, assetname);
             zhash_update(self->metrics, topic, ftymsg);
             zhash_freefn(self->metrics, topic, ftymsg_freefn);
-            *ftymsg_p = NULL;
+            *ftymsg_p = NULL; // owned by self->metrics
             zstr_free(&topic);
             metric_saved = true;
         }
@@ -419,25 +495,18 @@ static void flexible_alert_handle_metric(flexible_alert_t* self, fty_proto_t** f
     zstr_free(&qty_dup);
 }
 
-static int ask_for_sensor(flexible_alert_t* self, const char* sensor_name)
+static void ask_for_sensor(flexible_alert_t* self, const char* sensor_name)
 {
+    if (!(self && sensor_name))
+        return;
 
     if (!zhash_lookup(self->assets, sensor_name)) {
         log_debug("I have to ask for sensor  %s", sensor_name);
-
-        zmsg_t* msg = zmsg_new();
-        zmsg_addstr(msg, "REPUBLISH");
-        zmsg_addstr(msg, sensor_name);
-
-        int rv = mlm_client_sendto(self->mlm, "asset-agent", "REPUBLISH", NULL, 5000, &msg);
-        if (rv != 0) {
-            log_error("mlm_client_sendto (address = '%s', subject = '%s', timeout = '5000') for '%s' failed.",
-                "asset-agent", "REPUBLISH", sensor_name);
-        }
-        return rv;
+        s_republish_asset(self, {sensor_name});
     }
-    log_trace("I know this sensor %s", sensor_name);
-    return 0;
+    else {
+        log_trace("I know this sensor %s", sensor_name);
+    }
 }
 
 //  --------------------------------------------------------------------------
@@ -475,10 +544,12 @@ static int is_rule_for_this_asset(rule_t* rule, fty_proto_t* ftymsg)
     const char* subtype = fty_proto_aux_string(ftymsg, FTY_PROTO_ASSET_SUBTYPE, "");
     if (streq(subtype, "sensorgpio")) {
         if (rule_asset_exists(rule, fty_proto_name(ftymsg)) &&
-            rule_model_exists(rule, fty_proto_ext_string(ftymsg, FTY_PROTO_ASSET_EXT_MODEL, "")))
+            rule_model_exists(rule, fty_proto_ext_string(ftymsg, FTY_PROTO_ASSET_EXT_MODEL, ""))) {
             return 1;
-        else
+        }
+        else {
             return 0;
+        }
     }
 
     if (rule_asset_exists(rule, fty_proto_name(ftymsg)))
@@ -533,12 +604,9 @@ static void flexible_alert_handle_asset(flexible_alert_t* self, fty_proto_t* fty
 
     if (streq(operation, FTY_PROTO_ASSET_OP_DELETE) || !streq(status, "active"))
     {
-        if (zhash_lookup(self->assets, assetname)) {
-            zhash_delete(self->assets, assetname);
-        }
-        if (zhash_lookup(self->enames, assetname)) {
-            zhash_delete(self->enames, assetname);
-        }
+        zhash_delete(self->assets, assetname);
+        zhash_delete(self->enames, assetname);
+        zhash_delete(self->assetInfo, assetname);
 
         std::vector<std::string> rulesToDelete;
         rule_t* rule = reinterpret_cast<rule_t*>(zhash_first(self->rules));
@@ -572,11 +640,33 @@ static void flexible_alert_handle_asset(flexible_alert_t* self, fty_proto_t* fty
         if (zlist_size(functions_for_asset) == 0) {
             log_trace("no rule for %s", assetname);
             zhash_delete(self->assets, assetname);
+            zhash_delete(self->enames, assetname);
+            zhash_delete(self->assetInfo, assetname);
             zlist_destroy(&functions_for_asset);
             return;
         }
+
         zhash_update(self->assets, assetname, functions_for_asset);
         zhash_freefn(self->assets, assetname, asset_freefn);
+
+        // assetInfo update policy
+        {
+            bool update = !zhash_lookup(self->assetInfo, assetname)
+                || (fty_proto_aux(ftymsg) && (zhash_size(fty_proto_aux(ftymsg)) != 0));
+        #if 0
+            log_trace(ANSI_COLOR_CYAN "Update assetInfo (%s)", (update?"true":"false"));
+            fty_proto_print(ftymsg);
+            log_trace(ANSI_COLOR_RESET);
+        #endif
+            if (update) {
+                zhash_update(self->assetInfo, assetname, asset_info_new(ftymsg));
+                zhash_freefn(self->assetInfo, assetname, asset_info_freefn);
+
+                asset_info_t* info = reinterpret_cast<asset_info_t*>(zhash_lookup(self->assetInfo, assetname));
+                log_trace(ANSI_COLOR_CYAN "Update assetInfo %s locations: %s" ANSI_COLOR_RESET,
+                    assetname, asset_info_dumpLocations(info).c_str());
+            }
+        }
 
         const char* ename = fty_proto_ext_string(ftymsg, "name", NULL);
         if (ename) {
@@ -633,7 +723,7 @@ static zmsg_t* flexible_alert_list_rules(flexible_alert_t* self, const char* typ
 //  --------------------------------------------------------------------------
 //  handling requests for list of rules (version 2).
 //  list rules, with more filters defined in a unique json payload
-//  see fty-alert-engine rules list mailbox with identical interface
+//  NOTICE: see fty-alert-engine rules list mailbox with identical interface
 
 static const char* COMMAND_LIST2 = "LIST2";
 
@@ -656,11 +746,12 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
         std::string rule_class;
         std::string asset_type;
         std::string asset_sub_type;
+        std::string in;
         std::string category;
     };
-    Filter filter;
 
     // parse rule filter
+    Filter filter;
     try {
         cxxtools::SerializationInfo si;
         JSON::readFromString(jsonFilters, si);
@@ -674,6 +765,8 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
             { p->getValue(filter.asset_type); }
         if ((p = si.findMember("asset_sub_type")) && !p->isNull())
             { p->getValue(filter.asset_sub_type); }
+        if ((p = si.findMember("in")) && !p->isNull())
+            { p->getValue(filter.in); }
         if ((p = si.findMember("category")) && !p->isNull())
             { p->getValue(filter.category); }
     }
@@ -702,43 +795,62 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
             RETURN_REPLY_ERROR("INVALID_ASSET_SUB_TYPE");
         }
     }
+    // filter.in is regular?
+    if (!filter.in.empty()) {
+        std::string type; // empty
+        if (auto pos = filter.in.rfind("-"); pos != std::string::npos)
+            { type = filter.in.substr(0, pos); }
+        if (type != "datacenter" && type != "room" && type != "row" && type != "rack") {
+            RETURN_REPLY_ERROR("INVALID_IN");
+        }
+    }
 
-    // function to extract asset referenced by ruleName
+    // function to extract asset iname referenced by ruleName
     std::function<std::string(const std::string&)> assetFromRuleName = [](const std::string& ruleName) {
-        std::string asset{ruleName};
-        if (auto pos = asset.rfind("@"); pos != std::string::npos)
-            { asset = asset.substr(pos + 1); }
+        if (auto pos = ruleName.rfind("@"); pos != std::string::npos)
+            { return ruleName.substr(pos + 1); }
+        return std::string{};
+    };
+
+    // function to extract asset type referenced by ruleName
+    std::function<std::string(const std::string&)> assetTypeFromRuleName = [&assetFromRuleName](const std::string& ruleName) {
+        std::string asset{assetFromRuleName(ruleName)};
         if (auto pos = asset.rfind("-"); pos != std::string::npos)
-            { asset = asset.substr(0, pos); }
-        return asset;
+            { return asset.substr(0, pos); }
+        return std::string{};
     };
 
     // rule match filter? returns true if yes
-    std::function<bool(rule_t*)> match = [&filter,&assetFromRuleName](rule_t* rule) {
+    std::function<bool(rule_t*)> match =
+    [&self, &filter, &assetFromRuleName, &assetTypeFromRuleName](rule_t* rule) {
         // filter.type: rule is always 'flexible'
-        // filter.rule_class (ignored): just for compatibility with alert engine protocol
+        // filter.rule_class (ignored, deprecated?): just for compatibility with alert engine protocol
 
         // asset_type
         if (!filter.asset_type.empty()) {
-            std::string asset{assetFromRuleName(rule_name(rule))};
+            std::string type{assetTypeFromRuleName(rule_name(rule))};
             if (filter.asset_type == "device") { // 'device' exception
-                auto id = persist::subtype_to_subtypeid(asset);
+                auto id = persist::subtype_to_subtypeid(type);
                 if (id == persist::asset_subtype::SUNKNOWN)
                     { return false; }
             }
-            else {
-                if (filter.asset_type != asset)
-                    { return false; }
-            }
+            else if (filter.asset_type != type)
+                { return false; }
         }
         // asset_sub_type
         if (!filter.asset_sub_type.empty()) {
-            std::string asset{assetFromRuleName(rule_name(rule))};
-            if (filter.asset_sub_type != asset)
+            std::string type{assetTypeFromRuleName(rule_name(rule))};
+            if (filter.asset_sub_type != type)
                 { return false; }
         }
-        //if (!filter.category.empty() && (filter.category != rule->category()))
-        //    { return false; }
+        // in (location)
+        if (!filter.in.empty()) {
+            std::string asset{assetFromRuleName(rule_name(rule))};
+            asset_info_t* info = reinterpret_cast<asset_info_t*>(zhash_lookup(self->assetInfo, asset.c_str()));
+            //log_trace("LIST2 filter.in: %s locations: '%s'", asset.c_str(), asset_info_dumpLocations(info).c_str());
+            if (!asset_info_isInLocations(info, const_cast<char*>(filter.in.c_str())))
+                { return false; }
+        }
 
         return true; // match
     };
@@ -852,13 +964,14 @@ static zmsg_t* flexible_alert_add_rule(
         zmsg_t* msg = flexible_alert_delete_rule(self, old_name, dir);
         zmsg_destroy(&msg);
     }
+
     rule_t* rule = reinterpret_cast<rule_t*>(zhash_lookup(self->rules, rule_name(newrule)));
     if (rule && strstr(rule_name(rule), "sensorgpio") == NULL) {
         log_error("Rule %s exists", rule_name(rule));
         zmsg_addstr(reply, "ERROR");
         zmsg_addstr(reply, "ALREADY_EXISTS");
-    } else {
-
+    }
+    else {
         char* path = NULL;
         asprintf(&path, "%s/%s.rule", dir, rule_name(newrule));
         //log_trace("save rule '%s'", path);
@@ -876,24 +989,25 @@ static zmsg_t* flexible_alert_add_rule(
             log_info("Loading rule %s done (%s)", path, (rule1 ? "success" : "failed"));
 
             if (rule1) {
-                // we need to update our lists
-                zlist_t*    assets = zhash_keys(self->assets);
-                const char* asset  = reinterpret_cast<const char*>(zlist_first(assets));
-                while (asset) {
-                    if (rule_asset_exists(rule1, asset)) {
-                        zmsg_t* msg = zmsg_new();
-                        zmsg_addstr(msg, "REPUBLISH");
-                        zmsg_addstr(msg, asset);
-                        mlm_client_sendto(self->mlm, "asset-agent", "REPUBLISH", NULL, 5000, &msg);
-                        zmsg_destroy(&msg);
+                // we need to update our asset lists
+                std::vector<std::string> assets;
+                {
+                    zlist_t* keys = zhash_keys(self->assets);
+                    const char* asset = reinterpret_cast<const char*>(zlist_first(keys));
+                    while (asset) {
+                        if (rule_asset_exists(rule1, asset)) {
+                            assets.push_back(asset);
+                        }
+                        asset = reinterpret_cast<const char*>(zlist_next(keys));
                     }
-                    asset = reinterpret_cast<const char*>(zlist_next(assets));
+                    zlist_destroy(&keys);
                 }
-                zlist_destroy(&assets);
+                s_republish_asset(self, assets);
             }
         }
         zstr_free(&path);
     }
+
     rule_destroy(&newrule);
     return reply;
 }
@@ -902,6 +1016,7 @@ static void flexible_alert_metric_polling(zsock_t* pipe, void* args)
 {
     zpoller_t* poller = zpoller_new(pipe, NULL);
     zsock_signal(pipe, 0);
+
     zlist_t*          params          = reinterpret_cast<zlist_t*>(args);
     char*             assets_pattern  = reinterpret_cast<char*>(zlist_first(params));
     char*             metrics_pattern = reinterpret_cast<char*>(zlist_next(params));

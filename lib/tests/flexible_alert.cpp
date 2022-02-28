@@ -2,6 +2,7 @@
 #include "src/fty_alert_flexible_audit_log.h"
 #include <catch2/catch.hpp>
 #include <fty_shm.h>
+#include <malamute.h>
 
 TEST_CASE("flexible alert test")
 {
@@ -20,12 +21,6 @@ TEST_CASE("flexible alert test")
 
     fty_shm_set_test_dir(SELFTEST_DIR_RW);
     fty_shm_set_default_polling_interval(5);
-
-    //  Simple create/destroy test
-    flexible_alert_t* self = flexible_alert_new();
-    REQUIRE(self);
-    flexible_alert_destroy(&self);
-    REQUIRE(!self);
 
     // start malamute
     static const char* endpoint = "inproc://fty-metric-snmp";

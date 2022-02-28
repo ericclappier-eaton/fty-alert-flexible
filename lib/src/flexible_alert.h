@@ -21,19 +21,6 @@
 
 #pragma once
 #include <czmq.h>
-#include <malamute.h>
-
-struct flexible_alert_t
-{
-    zhash_t*      rules;
-    zhash_t*      assets;
-    zhash_t*      metrics;
-    zhash_t*      enames;
-    mlm_client_t* mlm;
-};
 
 // Flexible alert actor
 void flexible_alert_actor(zsock_t* pipe, void* args);
-
-flexible_alert_t* flexible_alert_new(void);
-void flexible_alert_destroy(flexible_alert_t** self_p);
