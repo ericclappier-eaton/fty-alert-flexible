@@ -315,10 +315,10 @@ static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const 
     }
 
     int   result  = 0;
-    char* message = NULL;
 
     // if no metric is missing
     if (!isMetricMissing) {
+        char* message = NULL;
 
         // call the lua function
         rule_evaluate(rule, params, assetname, ename, &result, &message);
@@ -334,7 +334,9 @@ static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const 
         zstr_free(&message);
     }
 
-    zlist_destroy(&params); // useless
+    zlist_destroy(&params);
+
+    // log audit alarm
 
     std::string sResult;
     switch (result) {
@@ -361,7 +363,6 @@ static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const 
             break;
     }
 
-    // log audit alarm
     std::stringstream ss;
     std::for_each(begin(auditValues), end(auditValues), [&ss](const std::string& elem) {
         if (ss.str().empty())
@@ -369,10 +370,9 @@ static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const 
         else
             ss << ", " << elem;
     });
-    log_info_alarms_flexible_audit("Evaluate rule '%s', assetname: %s [%s] -> result = %s, message = '%s'",
-        rule_name(rule), assetname, ss.str().c_str(), sResult.c_str(), message ? message : "");
 
-    zstr_free(&message);
+    log_info_alarms_flexible_audit("Evaluate rule '%s', assetname: %s [%s] -> result = %s",
+        rule_name(rule), assetname, ss.str().c_str(), sResult.c_str());
 }
 
 //  --------------------------------------------------------------------------
