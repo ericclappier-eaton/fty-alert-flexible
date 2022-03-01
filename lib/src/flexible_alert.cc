@@ -291,19 +291,19 @@ static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const 
         if (!ftymsg) {
             // some metrics are missing
             log_trace("abort evaluation of rule %s because %s metric is missing", rule_name(rule), topic);
-            zlist_destroy(&params);
-            zstr_free(&topic);
-
             std::stringstream ss;
             ss << param << " = " << "NaN";
             auditValues.push_back(ss.str());
             isMetricMissing = true;
+
+            zstr_free(&topic);
             break;
         }
+        zstr_free(&topic);
+
         // TTL should be set accorning shortest ttl in metric
         if (ttl == 0 || ttl > int(fty_proto_ttl(ftymsg)))
             ttl = int(fty_proto_ttl(ftymsg));
-        zstr_free(&topic);
         const char* value = fty_proto_value(ftymsg);
         zlist_append(params, const_cast<char*>(value));
 
@@ -332,17 +332,10 @@ static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const 
             log_error(ANSI_COLOR_RED "error evaluating rule %s" ANSI_COLOR_RESET, rule_name(rule));
         }
         zstr_free(&message);
-        zlist_destroy(&params);
     }
 
-    // log audit alarm
-    std::stringstream ss;
-    std::for_each(begin(auditValues), end(auditValues), [&ss](const std::string& elem) {
-        if (ss.str().empty())
-            ss << elem;
-        else
-            ss << ", " << elem;
-    });
+    zlist_destroy(&params); // useless
+
     std::string sResult;
     switch (result) {
         case 0:
@@ -367,8 +360,19 @@ static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const 
             sResult = "BAD_VALUE";
             break;
     }
+
+    // log audit alarm
+    std::stringstream ss;
+    std::for_each(begin(auditValues), end(auditValues), [&ss](const std::string& elem) {
+        if (ss.str().empty())
+            ss << elem;
+        else
+            ss << ", " << elem;
+    });
     log_info_alarms_flexible_audit("Evaluate rule '%s', assetname: %s [%s] -> result = %s, message = '%s'",
         rule_name(rule), assetname, ss.str().c_str(), sResult.c_str(), message ? message : "");
+
+    zstr_free(&message);
 }
 
 //  --------------------------------------------------------------------------
