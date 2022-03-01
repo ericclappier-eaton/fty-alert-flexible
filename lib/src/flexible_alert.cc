@@ -233,10 +233,10 @@ static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const 
     }
 
     int   result  = 0;
-    char* message = NULL;
 
     // if no metric is missing
     if (!isMetricMissing) {
+        char* message = NULL;
 
         // call the lua function
         rule_evaluate(rule, params, assetname, ename, &result, &message);
@@ -250,8 +250,9 @@ static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const 
             log_error(ANSI_COLOR_RED "error evaluating rule %s" ANSI_COLOR_RESET, rule_name(rule));
         }
         zstr_free(&message);
-        zlist_destroy(&params);
     }
+
+    zlist_destroy(&params);
 
     // log audit alarm
     std::stringstream ss;
@@ -285,8 +286,8 @@ static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const 
             sResult = "BAD_VALUE";
             break;
     }
-    log_info_alarms_flexible_audit("Evaluate rule '%s', assetname: %s [%s] -> result = %s, message = '%s'",
-        rule_name(rule), assetname, ss.str().c_str(), sResult.c_str(), message ? message : "");
+    log_info_alarms_flexible_audit("Evaluate rule '%s', assetname: %s [%s] -> result = %s",
+        rule_name(rule), assetname, ss.str().c_str(), sResult.c_str());
 }
 
 //  --------------------------------------------------------------------------
@@ -362,6 +363,7 @@ static void flexible_alert_handle_metric(flexible_alert_t* self, fty_proto_t** f
         ++qty_len_helper;
         if (*qty_len_helper == '\0') {
             log_error("malformed quantity");
+            zstr_free(&qty_dup);
             return;
         }
         while ((*qty_len_helper != '\0') && (*qty_len_helper != '.'))
@@ -565,6 +567,7 @@ static void flexible_alert_handle_asset(flexible_alert_t* self, fty_proto_t* fty
         if (zlist_size(functions_for_asset) == 0) {
             log_trace("no rule for %s", assetname);
             zhash_delete(self->assets, assetname);
+            zhash_delete(self->enames, assetname);
             zlist_destroy(&functions_for_asset);
             return;
         }
