@@ -145,10 +145,10 @@ static void s_republish_asset(flexible_alert_t* self, const std::vector<std::str
     if (!(self && self->mlm))
         return;
 
-    std::string assetsList; // for logs
-
     zmsg_t* msg = zmsg_new();
     zmsg_addstr(msg, "REPUBLISH");
+
+    std::string assetsList; // for logs
     for (auto& asset : assets) {
         if (asset.empty())
             continue;
