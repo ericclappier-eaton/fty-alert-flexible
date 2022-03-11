@@ -752,6 +752,7 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
         std::string asset_sub_type;
         std::string in;
         std::string category;
+        std::vector<std::string> categoryTokens; // splitted
     };
 
     // parse rule filter
@@ -808,6 +809,21 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
             RETURN_REPLY_ERROR("INVALID_IN");
         }
     }
+    // filter.category is free (list of tokens, with comma separator)
+    if (!filter.category.empty()) {
+        std::function<std::vector<std::string>(const std::string&)> split = [](const std::string& input) {
+           std::istringstream stream(input);
+           std::vector<std::string> tokens;
+           std::string token;
+           constexpr auto delim{','};
+           while (std::getline(stream, token, delim)) {
+              tokens.push_back(token);
+           }
+           return tokens;
+        };
+
+        filter.categoryTokens = split(filter.category);
+    }
 
     // function to extract asset iname referenced by ruleName
     std::function<std::string(const std::string&)> assetFromRuleName = [](const std::string& ruleName) {
@@ -824,9 +840,83 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
         return std::string{};
     };
 
+    // function to get category tokens for a rule
+    // Note: here we handle *all* alerts, even non flexible alerts that are not handled by the agent
+    // /!\ category map *must* be sync with fty-alert-engine/src/rule.cc getRuleCategoryTokens()
+    std::function<std::vector<std::string>(const std::string&)> getRuleCategoryTokens = [](const std::string& ruleName) {
+        // category tokens
+        static constexpr auto T_HUMIDITY{ "humidity" };
+        static constexpr auto T_TEMPERATURE{ "temperature" };
+        static constexpr auto T_BATTERY{ "battery" };
+        static constexpr auto T_LOAD{ "load" };
+        static constexpr auto T_PHASE{ "phase" };
+        static constexpr auto T_POWER{ "power" };
+        static constexpr auto T_FREQUENCY{ "frequency" };
+        static constexpr auto T_VOLTAGE{ "voltage" };
+        static constexpr auto T_STATUS{ "status" };
+        static constexpr auto T_OTHER{ "other" };
+        // sub tokens
+        static constexpr auto T_INPUT{ "input" };
+        static constexpr auto T_OUTPUT{ "output" };
+        static constexpr auto T_SENSOR{ "sensor" };
+        static constexpr auto T_DRY_CONTACT{ "dry-contact" };
+
+        // category tokens map based on rules name prefix (src/rule_templates/)
+        // define tokens associated to a rule (LIST rules filter)
+        // note: an empty vector means 'other'
+        static const std::map<std::string, std::vector<std::string>> CAT_TOKENS = {
+            { "average.humidity", { T_HUMIDITY, T_SENSOR } },
+            { "average.temperature", { T_TEMPERATURE, T_SENSOR } },
+            { "charge.battery", { T_BATTERY} },
+            { "door-contact.state-change", { T_DRY_CONTACT, T_SENSOR } },
+            { "fire-detector-extinguisher.state-change", { T_DRY_CONTACT, T_SENSOR } },
+            { "fire-detector.state-change", { T_DRY_CONTACT, T_SENSOR } },
+            { "humidity.default", { T_HUMIDITY, T_SENSOR } },
+            { "internal-failure", { T_STATUS } },
+            { "licensing.expire", {} },
+            { "load.default", { T_LOAD, T_OUTPUT } },
+            { "load.input_1phase", { T_LOAD, T_INPUT } },
+            { "load.input_3phase", { T_LOAD, T_INPUT } },
+            { "lowbattery", { T_BATTERY, T_STATUS } },
+            { "onacpoweroutage", { T_STATUS } },
+            { "onbattery", { T_BATTERY , T_STATUS} },
+            { "onbypass", { T_STATUS } },
+            { "phase_imbalance", { T_PHASE } },
+            { "pir-motion-detector.state-change", { T_DRY_CONTACT, T_SENSOR } },
+            { "realpower.default_1phase", { T_POWER, T_INPUT } },
+            { "realpower.default", { T_POWER, T_INPUT } },
+            { "runtime.battery", { T_BATTERY } },
+            { "section_load", { T_LOAD } },
+            { "smoke-detector.state-change", { T_DRY_CONTACT, T_SENSOR } },
+            { "sts-frequency", { T_FREQUENCY } },
+            { "sts-preferred-source", { T_STATUS } },
+            { "sts-voltage", { T_VOLTAGE } },
+            { "temperature.default", { T_TEMPERATURE, T_SENSOR } },
+            { "vibration-sensor.state-change", { T_DRY_CONTACT, T_SENSOR } },
+            { "voltage.input_1phase", { T_VOLTAGE, T_INPUT } },
+            { "voltage.input_3phase", { T_VOLTAGE, T_INPUT } },
+            { "water-leak-detector.state-change", { T_DRY_CONTACT, T_SENSOR } },
+        }; // CAT_TOKENS
+
+        std::string ruleNamePrefix{ruleName};
+        if (auto pos = ruleNamePrefix.rfind("@"); pos != std::string::npos)
+            { ruleNamePrefix = ruleNamePrefix.substr(0, pos); }
+
+        auto it = CAT_TOKENS.find(ruleNamePrefix);
+        if (it == CAT_TOKENS.end()) {
+            log_debug("key '%s' not found in CAT_TOKENS map", ruleNamePrefix.c_str());
+            return std::vector<std::string>({ T_OTHER }); // not found
+        }
+
+        if (it->second.empty()) {
+            return std::vector<std::string>({ T_OTHER }); // empty means 'other'
+        }
+        return it->second;
+    };
+
     // rule match filter? returns true if yes
     std::function<bool(rule_t*)> match =
-    [&self, &filter, &assetFromRuleName, &assetTypeFromRuleName](rule_t* rule) {
+    [&self, &filter, &assetFromRuleName, &assetTypeFromRuleName, &getRuleCategoryTokens](rule_t* rule) {
         // filter.type: rule is always 'flexible'
         // filter.rule_class (ignored, deprecated?): just for compatibility with alert engine protocol
 
@@ -854,6 +944,15 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
             //log_trace("LIST2 filter.in: %s locations: '%s'", asset.c_str(), asset_info_dumpLocations(info).c_str());
             if (!asset_info_isInLocations(info, const_cast<char*>(filter.in.c_str())))
                 { return false; }
+        }
+        // category
+        if (!filter.categoryTokens.empty()) {
+            std::vector<std::string> ruleTokens = getRuleCategoryTokens(rule_name(rule));
+            for (auto& token : filter.categoryTokens) {
+                auto it = std::find(ruleTokens.begin(), ruleTokens.end(), token);
+                if (it == ruleTokens.end())
+                    { return false; }
+            }
         }
 
         return true; // match
