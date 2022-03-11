@@ -853,6 +853,7 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
         static constexpr auto T_POWER{ "power" };
         static constexpr auto T_FREQUENCY{ "frequency" };
         static constexpr auto T_VOLTAGE{ "voltage" };
+        static constexpr auto T_AMPERAGE{ "amperage" };
         static constexpr auto T_STATUS{ "status" };
         static constexpr auto T_OTHER{ "other" };
         // sub tokens
@@ -860,13 +861,16 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
         static constexpr auto T_OUTPUT{ "output" };
         static constexpr auto T_SENSOR{ "sensor" };
         static constexpr auto T_DRY_CONTACT{ "dry-contact" };
+        static constexpr auto T_AMBIENT{ "ambient" };
 
         // category tokens map based on rules name prefix (src/rule_templates/)
         // define tokens associated to a rule (LIST rules filter)
         // note: an empty vector means 'other'
         static const std::map<std::string, std::vector<std::string>> CAT_TOKENS = {
             { "average.humidity", { T_HUMIDITY, T_SENSOR } },
+            { "average.humidity-input", { T_HUMIDITY, T_AMBIENT } },
             { "average.temperature", { T_TEMPERATURE, T_SENSOR } },
+            { "average.temperature-input", { T_TEMPERATURE, T_AMBIENT } },
             { "charge.battery", { T_BATTERY} },
             { "door-contact.state-change", { T_DRY_CONTACT, T_SENSOR } },
             { "fire-detector-extinguisher.state-change", { T_DRY_CONTACT, T_SENSOR } },
@@ -896,6 +900,21 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
             { "voltage.input_1phase", { T_VOLTAGE, T_INPUT } },
             { "voltage.input_3phase", { T_VOLTAGE, T_INPUT } },
             { "water-leak-detector.state-change", { T_DRY_CONTACT, T_SENSOR } },
+         // fty-nut inlined rules (fty-nut /lib/src/alert_device.cc)
+            { "ambient.humidity", { T_HUMIDITY, T_AMBIENT } },
+            { "ambient.temperature", { T_TEMPERATURE, T_AMBIENT } },
+            { "input.L1.voltage", { T_VOLTAGE, T_INPUT } },
+            { "input.L2.voltage", { T_VOLTAGE, T_INPUT } },
+            { "input.L3.voltage", { T_VOLTAGE, T_INPUT } },
+            { "input.L1.current", { T_AMPERAGE, T_INPUT } },
+            { "input.L2.current", { T_AMPERAGE, T_INPUT } },
+            { "input.L3.current", { T_AMPERAGE, T_INPUT } },
+            { "outlet.group.1.voltage", { T_VOLTAGE, T_OUTPUT } },
+            { "outlet.group.2.voltage", { T_VOLTAGE, T_OUTPUT } },
+            { "outlet.group.3.voltage", { T_VOLTAGE, T_OUTPUT } },
+            { "outlet.group.1.current", { T_AMPERAGE, T_OUTPUT } },
+            { "outlet.group.2.current", { T_AMPERAGE, T_OUTPUT } },
+            { "outlet.group.3.current", { T_AMPERAGE, T_OUTPUT } },
         }; // CAT_TOKENS
 
         std::string ruleNamePrefix{ruleName};
@@ -919,6 +938,9 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
     [&self, &filter, &assetFromRuleName, &assetTypeFromRuleName, &getRuleCategoryTokens](rule_t* rule) {
         // filter.type: rule is always 'flexible'
         // filter.rule_class (ignored, deprecated?): just for compatibility with alert engine protocol
+
+        if (std::string{rule_name(rule)} == "warranty") // exception, deprecated?
+            { return false; } // hidden from any list
 
         // asset_type
         if (!filter.asset_type.empty()) {
