@@ -22,7 +22,7 @@
 #include <czmq.h>
 
 // zlist_t compare locations items (char*)
-// required by zlist_first() usage
+// for zlist_exits() usage
 static int locations_cmp_fn(void *item1, void *item2)
 {
     char* s1 = static_cast<char*>(item1);
@@ -56,7 +56,7 @@ asset_info_t* asset_info_new(fty_proto_t* asset)
     for (int i = 1; i <= 4; i++) {
         char auxName[32];
         snprintf(auxName, sizeof(auxName), "parent_name.%d", i);
-        const char* parentiName = fty_proto_aux_string(asset, auxName, NULL);
+        const char* parentiName = fty_proto_aux_string(asset, auxName, nullptr);
         if (parentiName) {
             zlist_append(self->locations, const_cast<char*>(parentiName));
         }
@@ -77,20 +77,21 @@ void asset_info_destroy(asset_info_t** self_p)
     *self_p = NULL;
 }
 
+// returns 1 if yes, else 0
 int asset_info_isInLocations(asset_info_t* self, const char* asset)
 {
-    return (self && self->locations) ? zlist_exists(self->locations, const_cast<char*>(asset)) : 0;
+    return (self && self->locations && asset) ? zlist_exists(self->locations, const_cast<char*>(asset)) : 0;
 }
 
+// dbg
 std::string asset_info_dumpLocations(asset_info_t* self)
 {
     std::string aux;
     if (self) {
-        for (void* item = zlist_first(self->locations); item; item = zlist_next(self->locations))
-        {
-            char* iname = static_cast<char*>(item);
+        for (void* it = zlist_first(self->locations); it; it = zlist_next(self->locations)) {
+            char* iname = static_cast<char*>(it);
             aux += (aux.empty() ? "" : ", ") + std::string(iname);
         }
     }
-    return aux;
+    return "[" + aux + "]";
 }

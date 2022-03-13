@@ -414,6 +414,7 @@ static void flexible_alert_handle_metric(flexible_alert_t* self, fty_proto_t** f
 {
     if (!self || !ftymsg_p || !*ftymsg_p)
         return;
+
     fty_proto_t* ftymsg = *ftymsg_p;
     if (fty_proto_id(ftymsg) != FTY_PROTO_METRIC)
         return;
@@ -653,12 +654,14 @@ static void flexible_alert_handle_asset(flexible_alert_t* self, fty_proto_t* fty
         zhash_update(self->assets, assetname, functions_for_asset);
         zhash_freefn(self->assets, assetname, asset_freefn);
 
-        // assetInfo update policy
+        // assetInfo update policy:
+        // - if new or
+        // - if proto embed aux attributes (to get locations)
         {
             bool update = !zhash_lookup(self->assetInfo, assetname)
                 || (fty_proto_aux(ftymsg) && (zhash_size(fty_proto_aux(ftymsg)) != 0));
         #if 0
-            log_trace(ANSI_COLOR_CYAN "Update assetInfo (%s)", (update?"true":"false"));
+            log_trace(ANSI_COLOR_CYAN "Update %s assetInfo (%s)", assetname, (update ? "true" : "false"));
             fty_proto_print(ftymsg);
             log_trace(ANSI_COLOR_RESET);
         #endif
@@ -667,7 +670,7 @@ static void flexible_alert_handle_asset(flexible_alert_t* self, fty_proto_t* fty
                 zhash_freefn(self->assetInfo, assetname, asset_info_freefn);
 
                 asset_info_t* info = reinterpret_cast<asset_info_t*>(zhash_lookup(self->assetInfo, assetname));
-                log_trace(ANSI_COLOR_CYAN "Update assetInfo %s locations: %s" ANSI_COLOR_RESET,
+                log_trace(ANSI_COLOR_CYAN "Update %s assetInfo, locations: %s" ANSI_COLOR_RESET,
                     assetname, asset_info_dumpLocations(info).c_str());
             }
         }
@@ -704,7 +707,7 @@ static zmsg_t* flexible_alert_list_rules(flexible_alert_t* self, const char* typ
     zmsg_t* reply = zmsg_new();
     zmsg_addstr(reply, "LIST");
     zmsg_addstr(reply, type);
-    zmsg_addstr(reply, rule_class);
+    zmsg_addstr(reply, rule_class ? rule_class : "");
 
     rule_t* rule = reinterpret_cast<rule_t*>(zhash_first(self->rules));
     while (rule) {
@@ -782,9 +785,14 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
 
     // filter.type is regular?
     if (!filter.type.empty()) {
-        if (!(filter.type == "all" || filter.type == "flexible")) {
+        const auto type{filter.type};
+        if (type != "all" && type != "flexible") {
             RETURN_REPLY_ERROR("INVALID_TYPE");
         }
+    }
+    // filter.rule_class is regular?
+    if (!filter.rule_class.empty()) {
+        // free input
     }
     // filter.asset_type is regular?
     if (!filter.asset_type.empty()) {
@@ -809,20 +817,21 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
             RETURN_REPLY_ERROR("INVALID_IN");
         }
     }
-    // filter.category is free (list of tokens, with comma separator)
+    // filter.category is regular? (free list of tokens, with comma separator)
+    filter.categoryTokens.clear();
     if (!filter.category.empty()) {
-        std::function<std::vector<std::string>(const std::string&)> split = [](const std::string& input) {
-           std::istringstream stream(input);
-           std::vector<std::string> tokens;
-           std::string token;
-           constexpr auto delim{','};
-           while (std::getline(stream, token, delim)) {
-              tokens.push_back(token);
-           }
-           return tokens;
-        };
-
-        filter.categoryTokens = split(filter.category);
+        // extract tokens in categoryTokens
+        std::istringstream stream{filter.category};
+        constexpr auto delim{','};
+        std::string token;
+        while (std::getline(stream, token, delim)) {
+            if (!token.empty()) {
+                filter.categoryTokens.push_back(token);
+            }
+        }
+        if (filter.categoryTokens.empty()) {
+            RETURN_REPLY_ERROR("INVALID_CATEGORY");
+        }
     }
 
     // function to extract asset iname referenced by ruleName
@@ -841,9 +850,11 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
     };
 
     // function to get category tokens for a rule
-    // Note: here we handle *all* alerts, even non flexible alerts that are not handled by the agent
-    // /!\ category map *must* be sync with fty-alert-engine/src/rule.cc getRuleCategoryTokens()
-    std::function<std::vector<std::string>(const std::string&)> getRuleCategoryTokens = [](const std::string& ruleName) {
+    // Note: here we handle *all* rule names, even if not handled by the agent (flexible VS threshold/single/pattern)
+    // /!\ category tokens and map **must** be synchronized between:
+    // /!\ - fty-alert-engine/src/fty_alert_engine_server.cc categoryTokensFromRuleName()
+    // /!\ - fty-alert-flexible/lib/src/flexible_alert.cc categoryTokensFromRuleName()
+    std::function<std::vector<std::string>(const std::string&)> categoryTokensFromRuleName = [](const std::string& ruleName) {
         // category tokens
         static constexpr auto T_HUMIDITY{ "humidity" };
         static constexpr auto T_TEMPERATURE{ "temperature" };
@@ -863,44 +874,49 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
         static constexpr auto T_DRY_CONTACT{ "dry-contact" };
         static constexpr auto T_AMBIENT{ "ambient" };
 
-        // category tokens map based on rules name prefix (src/rule_templates/)
+        // /!\ **must** sync between fty-alert-engine & fty-alert-flexible
+        // category tokens map based on rules name prefix (src/rule_templates/ and fty-nut inlined)
         // define tokens associated to a rule (LIST rules filter)
         // note: an empty vector means 'other'
         static const std::map<std::string, std::vector<std::string>> CAT_TOKENS = {
+        // fty-alert-engine (threshold/single/pattern rules)
             { "average.humidity", { T_HUMIDITY, T_SENSOR } },
             { "average.humidity-input", { T_HUMIDITY, T_AMBIENT } },
             { "average.temperature", { T_TEMPERATURE, T_SENSOR } },
             { "average.temperature-input", { T_TEMPERATURE, T_AMBIENT } },
             { "charge.battery", { T_BATTERY} },
-            { "door-contact.state-change", { T_DRY_CONTACT, T_SENSOR } },
-            { "fire-detector-extinguisher.state-change", { T_DRY_CONTACT, T_SENSOR } },
-            { "fire-detector.state-change", { T_DRY_CONTACT, T_SENSOR } },
             { "humidity.default", { T_HUMIDITY, T_SENSOR } },
             { "internal-failure", { T_STATUS } },
-            { "licensing.expire", {} },
             { "load.default", { T_LOAD, T_OUTPUT } },
             { "load.input_1phase", { T_LOAD, T_INPUT } },
             { "load.input_3phase", { T_LOAD, T_INPUT } },
             { "lowbattery", { T_BATTERY, T_STATUS } },
             { "onacpoweroutage", { T_STATUS } },
-            { "onbattery", { T_BATTERY , T_STATUS} },
+            { "onbattery", { T_BATTERY, T_STATUS} },
             { "onbypass", { T_STATUS } },
             { "phase_imbalance", { T_PHASE } },
-            { "pir-motion-detector.state-change", { T_DRY_CONTACT, T_SENSOR } },
             { "realpower.default_1phase", { T_POWER, T_INPUT } },
             { "realpower.default", { T_POWER, T_INPUT } },
             { "runtime.battery", { T_BATTERY } },
             { "section_load", { T_LOAD } },
-            { "smoke-detector.state-change", { T_DRY_CONTACT, T_SENSOR } },
-            { "sts-frequency", { T_FREQUENCY } },
-            { "sts-preferred-source", { T_STATUS } },
-            { "sts-voltage", { T_VOLTAGE } },
             { "temperature.default", { T_TEMPERATURE, T_SENSOR } },
             { "vibration-sensor.state-change", { T_DRY_CONTACT, T_SENSOR } },
             { "voltage.input_1phase", { T_VOLTAGE, T_INPUT } },
             { "voltage.input_3phase", { T_VOLTAGE, T_INPUT } },
+            { "warranty", {} },
+        // fty-alert-flexible (flexible rules)
+            { "door-contact.state-change", { T_DRY_CONTACT, T_SENSOR } },
+            { "fire-detector-extinguisher.state-change", { T_DRY_CONTACT, T_SENSOR } },
+            { "fire-detector.state-change", { T_DRY_CONTACT, T_SENSOR } },
+            { "licensing.expire", {} },
+            { "pir-motion-detector.state-change", { T_DRY_CONTACT, T_SENSOR } },
+            { "smoke-detector.state-change", { T_DRY_CONTACT, T_SENSOR } },
+            { "sts-frequency", { T_FREQUENCY } },
+            { "sts-preferred-source", { T_STATUS } },
+            { "sts-voltage", { T_VOLTAGE } },
+            { "vibration-sensor.state-change", { T_DRY_CONTACT, T_SENSOR } },
             { "water-leak-detector.state-change", { T_DRY_CONTACT, T_SENSOR } },
-         // fty-nut inlined rules (fty-nut /lib/src/alert_device.cc)
+         // fty-nut (inlined threshold rules, see fty-nut/lib/src/alert_device.cc)
             { "ambient.humidity", { T_HUMIDITY, T_AMBIENT } },
             { "ambient.temperature", { T_TEMPERATURE, T_AMBIENT } },
             { "input.L1.voltage", { T_VOLTAGE, T_INPUT } },
@@ -909,12 +925,14 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
             { "input.L1.current", { T_AMPERAGE, T_INPUT } },
             { "input.L2.current", { T_AMPERAGE, T_INPUT } },
             { "input.L3.current", { T_AMPERAGE, T_INPUT } },
-            { "outlet.group.1.voltage", { T_VOLTAGE, T_OUTPUT } },
+            { "outlet.group.1.voltage", { T_VOLTAGE, T_OUTPUT } }, // assume 4 groups max.
             { "outlet.group.2.voltage", { T_VOLTAGE, T_OUTPUT } },
             { "outlet.group.3.voltage", { T_VOLTAGE, T_OUTPUT } },
+            { "outlet.group.4.voltage", { T_VOLTAGE, T_OUTPUT } },
             { "outlet.group.1.current", { T_AMPERAGE, T_OUTPUT } },
             { "outlet.group.2.current", { T_AMPERAGE, T_OUTPUT } },
             { "outlet.group.3.current", { T_AMPERAGE, T_OUTPUT } },
+            { "outlet.group.4.current", { T_AMPERAGE, T_OUTPUT } },
         }; // CAT_TOKENS
 
         std::string ruleNamePrefix{ruleName};
@@ -927,20 +945,17 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
             return std::vector<std::string>({ T_OTHER }); // not found
         }
 
-        if (it->second.empty()) {
-            return std::vector<std::string>({ T_OTHER }); // empty means 'other'
+        if (it->second.empty()) { // empty means 'other'
+            return std::vector<std::string>({ T_OTHER });
         }
         return it->second;
     };
 
     // rule match filter? returns true if yes
     std::function<bool(rule_t*)> match =
-    [&self, &filter, &assetFromRuleName, &assetTypeFromRuleName, &getRuleCategoryTokens](rule_t* rule) {
+    [&self, &filter, &assetFromRuleName, &assetTypeFromRuleName, &categoryTokensFromRuleName](rule_t* rule) {
         // filter.type: rule is always 'flexible'
         // filter.rule_class (ignored, deprecated?): just for compatibility with alert engine protocol
-
-        if (std::string{rule_name(rule)} == "warranty") // exception, deprecated?
-            { return false; } // hidden from any list
 
         // asset_type
         if (!filter.asset_type.empty()) {
@@ -948,7 +963,7 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
             if (filter.asset_type == "device") { // 'device' exception
                 auto id = persist::subtype_to_subtypeid(type);
                 if (id == persist::asset_subtype::SUNKNOWN)
-                    { return false; }
+                    { return false; } // 'type' is not a device
             }
             else if (filter.asset_type != type)
                 { return false; }
@@ -969,7 +984,7 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
         }
         // category
         if (!filter.categoryTokens.empty()) {
-            std::vector<std::string> ruleTokens = getRuleCategoryTokens(rule_name(rule));
+            std::vector<std::string> ruleTokens = categoryTokensFromRuleName(rule_name(rule));
             for (auto& token : filter.categoryTokens) {
                 auto it = std::find(ruleTokens.begin(), ruleTokens.end(), token);
                 if (it == ruleTokens.end())
@@ -987,17 +1002,22 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
     rule_t* rule = reinterpret_cast<rule_t*>(zhash_first(self->rules));
     while (rule) {
         if (match(rule)) {
+            bool addOk{false};
             char* json = rule_json(rule);
             if (json) {
                 char* flexJson = NULL;
                 asprintf(&flexJson, "{\"flexible\": %s}", json);
                 if (flexJson) {
-                    log_trace("%s add %s", COMMAND_LIST2, rule_name(rule));
+                    addOk = true;
                     zmsg_addstr(reply, flexJson);
                 }
                 zstr_free(&flexJson);
             }
             zstr_free(&json);
+            log_debug("%s add rule '%s'%s", COMMAND_LIST2, rule_name(rule), (addOk ? "" : " (FAILED)"));
+        }
+        else {
+            log_debug("%s skip rule '%s'", COMMAND_LIST2, rule_name(rule));
         }
         rule = reinterpret_cast<rule_t*>(zhash_next(self->rules));
     }
@@ -1139,6 +1159,8 @@ static zmsg_t* flexible_alert_add_rule(
 
 static void flexible_alert_metric_polling(zsock_t* pipe, void* args)
 {
+    const char* actor_name = "flexible_alert_metric_polling";
+
     zpoller_t* poller = zpoller_new(pipe, NULL);
     zsock_signal(pipe, 0);
 
@@ -1147,8 +1169,8 @@ static void flexible_alert_metric_polling(zsock_t* pipe, void* args)
     char*             metrics_pattern = reinterpret_cast<char*>(zlist_next(params));
     flexible_alert_t* self            = reinterpret_cast<flexible_alert_t*>(zlist_next(params));
 
-    log_info("flexible_alert_metric_polling started (assets_pattern: %s, metrics_pattern: %s)", assets_pattern,
-        metrics_pattern);
+    log_info("%s started (assets_pattern: %s, metrics_pattern: %s)",
+        actor_name, assets_pattern, metrics_pattern);
 
     while (!zsys_interrupted) {
         void* which = zpoller_wait(poller, fty_get_polling_interval() * 1000);
@@ -1159,31 +1181,27 @@ static void flexible_alert_metric_polling(zsock_t* pipe, void* args)
         if (zpoller_expired(poller)) {
             fty::shm::shmMetrics result;
             fty::shm::read_metrics(assets_pattern, metrics_pattern, result);
-            log_debug("poll: read metrics from SHM (size: %d, assets: %s, metrics: %s)", result.size(), assets_pattern,
-                metrics_pattern);
+            log_debug("%s: read %zu metrics from SHM (assets: %s, metrics: %s)",
+                actor_name, result.size(), assets_pattern, metrics_pattern);
             for (auto& element : result) {
                 flexible_alert_handle_metric(self, &element, true);
             }
         } else if (which == pipe) {
-            zmsg_t* message = zmsg_recv(pipe);
-            if (message) {
-                char* cmd = zmsg_popstr(message);
-                if (cmd) {
-                    if (streq(cmd, "$TERM")) {
-                        zstr_free(&cmd);
-                        zmsg_destroy(&message);
-                        break;
-                    }
-                    zstr_free(&cmd);
-                }
-                zmsg_destroy(&message);
+            zmsg_t* msg = zmsg_recv(pipe);
+            char* cmd = zmsg_popstr(msg);
+            if (cmd && streq(cmd, "$TERM")) {
+                zstr_free(&cmd);
+                zmsg_destroy(&msg);
+                break;
             }
+            zstr_free(&cmd);
+            zmsg_destroy(&msg);
         }
     }
 
-    log_info("flexible_alert_metric_polling: ended.");
-
     zpoller_destroy(&poller);
+
+    log_info("%s ended", actor_name);
 }
 
 //  --------------------------------------------------------------------------
@@ -1191,96 +1209,114 @@ static void flexible_alert_metric_polling(zsock_t* pipe, void* args)
 
 void flexible_alert_actor(zsock_t* pipe, void* args)
 {
+    const char* actor_name = "flexible_alert_actor";
+
     flexible_alert_t* self = flexible_alert_new();
     if (!self) {
-        log_fatal("flexible_alert_new() failed");
+        log_fatal("%s: flexible_alert_new() failed", actor_name);
         return;
     }
 
     zsock_signal(pipe, 0);
-    char* ruledir = NULL;
 
     zlist_t* params = reinterpret_cast<zlist_t*>(args);
     zlist_append(params, self);
     zactor_t* metric_polling = zactor_new(flexible_alert_metric_polling, params);
 
-    const int POLL_TIMEOUT_MS = 30000; //ms
     zpoller_t* poller = zpoller_new(mlm_client_msgpipe(self->mlm), pipe, NULL);
+
+    log_info("%s started", actor_name);
+
+    const int POLL_TIMEOUT_MS = 30000; //ms
+    char* ruledir = NULL;
+
     while (!zsys_interrupted) {
         void* which = zpoller_wait(poller, POLL_TIMEOUT_MS);
+
         if (which == pipe) {
             zmsg_t* msg = zmsg_recv(pipe);
             char*   cmd = zmsg_popstr(msg);
-            if (cmd) {
-                if (streq(cmd, "$TERM")) {
-                    zstr_free(&cmd);
-                    zmsg_destroy(&msg);
-                    break;
-                } else if (streq(cmd, "BIND")) {
-                    char* endpoint = zmsg_popstr(msg);
-                    char* myname   = zmsg_popstr(msg);
-                    assert(endpoint && myname);
-                    mlm_client_connect(self->mlm, endpoint, 5000, myname);
-                    zstr_free(&endpoint);
-                    zstr_free(&myname);
-                } else if (streq(cmd, "PRODUCER")) {
-                    char* stream = zmsg_popstr(msg);
-                    assert(stream);
-                    mlm_client_set_producer(self->mlm, stream);
-                    zstr_free(&stream);
-                } else if (streq(cmd, "CONSUMER")) {
-                    char* stream  = zmsg_popstr(msg);
-                    char* pattern = zmsg_popstr(msg);
-                    assert(stream && pattern);
-                    mlm_client_set_consumer(self->mlm, stream, pattern);
-                    zstr_free(&stream);
-                    zstr_free(&pattern);
-                } else if (streq(cmd, "LOADRULES")) {
-                    zstr_free(&ruledir);
-                    ruledir = zmsg_popstr(msg);
-                    assert(ruledir);
-                    flexible_alert_load_rules(self, ruledir);
-                } else {
-                    log_warning("Unknown command.");
-                }
+
+            if (!cmd) {
+                log_debug("Invalid command.");
+            }
+            else if (streq(cmd, "$TERM")) {
+                zstr_free(&cmd);
+                zmsg_destroy(&msg);
+                break;
+            }
+            else if (streq(cmd, "BIND")) {
+                char* endpoint = zmsg_popstr(msg);
+                char* myname   = zmsg_popstr(msg);
+                assert(endpoint && myname);
+                mlm_client_connect(self->mlm, endpoint, 5000, myname);
+                zstr_free(&endpoint);
+                zstr_free(&myname);
+            }
+            else if (streq(cmd, "PRODUCER")) {
+                char* stream = zmsg_popstr(msg);
+                assert(stream);
+                mlm_client_set_producer(self->mlm, stream);
+                zstr_free(&stream);
+            }
+            else if (streq(cmd, "CONSUMER")) {
+                char* stream  = zmsg_popstr(msg);
+                char* pattern = zmsg_popstr(msg);
+                assert(stream && pattern);
+                mlm_client_set_consumer(self->mlm, stream, pattern);
+                zstr_free(&stream);
+                zstr_free(&pattern);
+            }
+            else if (streq(cmd, "LOADRULES")) {
+                zstr_free(&ruledir);
+                ruledir = zmsg_popstr(msg);
+                assert(ruledir);
+                flexible_alert_load_rules(self, ruledir);
+            }
+            else {
+                log_warning("Unknown command (%s).", cmd);
             }
             zstr_free(&cmd);
             zmsg_destroy(&msg);
         }
         else if (which == mlm_client_msgpipe(self->mlm)) {
             zmsg_t* msg = mlm_client_recv(self->mlm);
-            if (fty_proto_is(msg)) {
+            const char* command = mlm_client_command(self->mlm);
+
+            if (fty_proto_is(msg)) { // eg. STREAM DELIVER command
+	            const char* address = mlm_client_address(self->mlm);
                 fty_proto_t* fmsg = fty_proto_decode(&msg);
 
                 if (fty_proto_id(fmsg) == FTY_PROTO_ASSET) {
-                    const char* address = mlm_client_address(self->mlm);
                     log_trace(ANSI_COLOR_CYAN "Receive PROTO_ASSET %s@%s on stream %s" ANSI_COLOR_RESET,
                         fty_proto_operation(fmsg), fty_proto_name(fmsg), address);
                     flexible_alert_handle_asset(self, fmsg, ruledir);
                 }
                 else if (fty_proto_id(fmsg) == FTY_PROTO_METRIC) {
-                    const char* address = mlm_client_address(self->mlm);
                     log_trace(ANSI_COLOR_CYAN "Receive PROTO_METRIC %s@%s on stream %s" ANSI_COLOR_RESET,
                         fty_proto_type(fmsg), fty_proto_name(fmsg), address);
 
-                    if (0 == strcmp(address, FTY_PROTO_STREAM_METRICS) ||
-                        0 == strcmp(address, FTY_PROTO_STREAM_LICENSING_ANNOUNCEMENTS)) {
+                    if (streq(address, FTY_PROTO_STREAM_METRICS) ||
+                        streq(address, FTY_PROTO_STREAM_LICENSING_ANNOUNCEMENTS))
+                    {
                         // messages from FTY_PROTO_STREAM_METRICS are regular metrics
                         // LICENSING.EXPIRE: bmsg publish licensing-limitation licensing.expire 7 days
                         flexible_alert_handle_metric(self, &fmsg, false);
-                    } else if (0 == strcmp(address, FTY_PROTO_STREAM_METRICS_SENSOR)) {
+                    }
+                    else if (streq(address, FTY_PROTO_STREAM_METRICS_SENSOR)) {
                         // messages from FTY_PROTO_STREAM_METRICS_SENSORS are gpi sensors
                         if (is_gpi_metric(fmsg))
                             flexible_alert_handle_metric_sensor(self, &fmsg);
-                    } else {
-                        log_debug("Message proto ID = FTY_PROTO_METRIC, message address not valid = '%s'", address);
+                    }
+                    else {
+                        log_debug("Message FTY_PROTO_METRIC, invalid address ('%s')", address);
                     }
                 }
                 fty_proto_destroy(&fmsg);
             }
-            else if (streq(mlm_client_command(self->mlm), "MAILBOX DELIVER")) {
+            else if (streq(command, "MAILBOX DELIVER")) {
                 // someone is addressing us directly
-                // protocol frames COMMAND/param1/param2
+                // protocol frames cmd/param1/param2
                 char* cmd = zmsg_popstr(msg);
                 char* p1  = zmsg_popstr(msg);
                 char* p2  = zmsg_popstr(msg);
@@ -1350,4 +1386,6 @@ void flexible_alert_actor(zsock_t* pipe, void* args)
     zstr_free(&ruledir);
     zpoller_destroy(&poller);
     flexible_alert_destroy(&self);
+
+    log_info("%s ended", actor_name);
 }

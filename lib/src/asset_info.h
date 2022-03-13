@@ -33,7 +33,7 @@ asset_info_t* asset_info_new(fty_proto_t* asset);
 /// self_p nullified
 void asset_info_destroy(asset_info_t** self_p);
 
-/// says if the given ASSET is described in asset locations
+/// says if the given ASSET is described in self locations
 /// returns 1 if yes, else 0
 int asset_info_isInLocations(asset_info_t* self, const char* asset);
 

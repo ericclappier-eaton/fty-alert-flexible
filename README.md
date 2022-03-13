@@ -20,7 +20,7 @@ File has to have a `.rule` extension. Some example rule files are
 provided in the source code among fixtures for the agent's selftest,
 in `src/selftest-ro/rules` directory, and are installed as part of
 package to the shared data directory.
- 
+
 Evaluation function is written in Lua.
 
 ```bash
@@ -109,3 +109,15 @@ HIGH_CRITICAL.
 Agent automatically creates alerts from metrics called `nagios.*`.
 See fty-agent-snmp for more information.
 
+## Mailbox
+
+bmsg request fty-alert-flexible IGNORED <command> <arg1> .. <argN>
+
+where command is one of:
+* LIST
+* LIST2 (LIST version 2)
+* GET
+* ADD
+* DELETE
+
+see lib/src/flexible_alert.cc for protocol descriptions
