@@ -3,6 +3,7 @@
 #include <catch2/catch.hpp>
 #include <fty_shm.h>
 #include <malamute.h>
+#include <iostream>
 
 TEST_CASE("flexible alert test")
 {
@@ -113,6 +114,96 @@ TEST_CASE("flexible alert test")
         zstr_free(&item);
 
         zmsg_destroy(&reply);
+    }
+    {
+        // test LIST2 (LIST version 2)
+
+        struct {
+            std::string payload; // json
+            bool success; // expected
+        } testVector[] = {
+            { "", false },
+            { "{", false }, // invalid json
+            { R"({ "hello": "world")", false }, // invalid json
+            { "{}", true },
+            { R"({ "hello": "world" })", true },
+            { R"({ "type": "all" })", true },
+            { R"({ "type": "" })", true }, // eg 'all'
+            { R"({ "type": "flexible" })", true },
+            { R"({ "type": "threshold" })", false }, // type unknown
+            { R"({ "type": "single" })", false }, // type unknown
+            { R"({ "type": "pattern" })", false }, // type unknown
+            { R"({ "type": "hello" })", false }, // type unknown
+        };
+
+        for (auto& test : testVector) {
+            zmsg_t* command = zmsg_new();
+            zmsg_addstrf(command, "%s", "LIST2"); // version 2
+            zmsg_addstrf(command, "%s", test.payload.c_str());
+            mlm_client_sendto(asset, "me", "anythingyouwant", nullptr, 1000, &command);
+            zmsg_destroy(&command);
+
+            zmsg_t* recv = mlm_client_recv(asset);
+            REQUIRE(recv);
+            zmsg_print(recv);
+
+            char* foo = zmsg_popstr(recv);
+            REQUIRE(foo);
+            REQUIRE( test.success == streq(foo, "LIST2")); // LIST2 as OK
+            REQUIRE(!test.success == streq(foo, "ERROR")); // ERROR as KO
+            zstr_free(&foo);
+
+            zmsg_destroy(&recv);
+        }
+    }
+    {
+        struct {
+            std::string payload; // json
+            size_t ruleCnt; // rules count (success expected)
+        } testVector[] = {
+            { R"({ "type": "all", "rule_class": "deprecated?" })", 8 },
+            { R"({ "type": "all" })", 8 },
+            { R"({ "type": "" })", 8 }, // eg. all
+            { R"({})", 8 }, // type=="", eg all
+            { R"({ "type": "flexible" })", 8 },
+        };
+
+        for (auto& test : testVector) {
+            zmsg_t* command = zmsg_new();
+            zmsg_addstrf(command, "%s", "LIST2"); // version 2
+            zmsg_addstrf(command, "%s", test.payload.c_str());
+            mlm_client_sendto(asset, "me", "anythingyouwant", NULL, 1000, &command);
+            zmsg_destroy(&command);
+
+            zmsg_t* recv = mlm_client_recv(asset);
+            REQUIRE(recv);
+            //zmsg_print(recv);
+
+            REQUIRE(zmsg_size(recv) == (2 + test.ruleCnt));
+
+            char* foo = zmsg_popstr(recv);
+            REQUIRE(foo);
+            REQUIRE(streq(foo, "LIST2")); // success
+            zstr_free(&foo);
+
+            foo = zmsg_popstr(recv);
+            REQUIRE(foo);
+            REQUIRE(streq(foo, test.payload.c_str()));
+            zstr_free(&foo);
+
+            size_t cnt = 0;
+            do {
+                foo = zmsg_popstr(recv);
+                if (!foo) break;
+                std::cout << "-- rule-" << cnt << std::endl << foo << std::endl;
+                zstr_free(&foo);
+                cnt++;
+            } while(1);
+            REQUIRE(test.ruleCnt == cnt);
+
+            zstr_free(&foo);
+            zmsg_destroy(&recv);
+        }
     }
     {
         // test GET
