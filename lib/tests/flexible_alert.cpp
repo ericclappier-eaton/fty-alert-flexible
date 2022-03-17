@@ -134,6 +134,19 @@ TEST_CASE("flexible alert test")
             { R"({ "type": "single" })", false }, // type unknown
             { R"({ "type": "pattern" })", false }, // type unknown
             { R"({ "type": "hello" })", false }, // type unknown
+            { R"({ "asset_type": "hello" })", false }, // asset_type unknown
+            { R"({ "asset_type": "ups" })", false }, // asset_type unknown
+            { R"({ "asset_type": "rack" })", true },
+            { R"({ "asset_sub_type": "hello" })", false }, // asset_sub_type unknown
+            { R"({ "asset_sub_type": "ups" })", true },
+            { R"({ "asset_sub_type": "rack" })", false }, // asset_sub_type unknown
+            { R"({ "in": "ups-123" })", false }, // in (location) invalid
+            { R"({ "in": "datacenter-123" })", true },
+            { R"({ "in": "room-123" })", true },
+            { R"({ "in": "row-123" })", true },
+            { R"({ "in": "rack-123" })", true },
+            { R"({ "category": "hello" })", true }, // free
+            { R"({ "category": "other" })", true },
         };
 
         for (auto& test : testVector) {
@@ -166,6 +179,9 @@ TEST_CASE("flexible alert test")
             { R"({ "type": "" })", 8 }, // eg. all
             { R"({})", 8 }, // type=="", eg all
             { R"({ "type": "flexible" })", 8 },
+            { R"({ "category": "hello" })", 0 },
+            { R"({ "category": "sts" })", 3 },
+            { R"({ "category": "other" })", 5 },
         };
 
         for (auto& test : testVector) {
