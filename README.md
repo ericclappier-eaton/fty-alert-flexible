@@ -111,8 +111,9 @@ See fty-agent-snmp for more information.
 
 ## Mailbox
 
-bmsg request fty-alert-flexible IGNORED <command> <arg1> .. <argN>
-
+```bash
+bmsg request fty-alert-flexible XXX <command> <arg1> .. <argN>
+```
 where command is one of:
 * LIST
 * LIST2 (LIST version 2)
