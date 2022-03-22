@@ -169,9 +169,9 @@ static void s_republish_asset(flexible_alert_t* self, const std::vector<std::str
     if (r != 0) {
         log_error("%s REPUBLISH %s failed", AGENT_FTY_ASSET, assetsList.c_str());
     }
-    else { // consume response
-        msg = mlm_client_recv(self->mlm);
-        zmsg_destroy(&msg);
+    else { // consume response?
+        //msg = mlm_client_recv(self->mlm);
+        //zmsg_destroy(&msg);
     }
 }
 
