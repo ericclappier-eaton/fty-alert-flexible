@@ -1061,7 +1061,7 @@ static zmsg_t* flexible_alert_delete_rule(flexible_alert_t* self, const char* na
             zmsg_addstr(reply, "OK");
             zhash_delete(self->rules, name);
         } else {
-            log_error("Can't remove %s", path);
+            log_error("Can't delete '%s'", path);
             zmsg_addstr(reply, "ERROR");
             zmsg_addstr(reply, "CAN_NOT_REMOVE");
         }
@@ -1277,7 +1277,7 @@ void flexible_alert_actor(zsock_t* pipe, void* args)
             const char* command = mlm_client_command(self->mlm);
 
             if (fty_proto_is(msg)) { // eg. STREAM DELIVER command
-	            const char* address = mlm_client_address(self->mlm);
+                const char* address = mlm_client_address(self->mlm);
                 fty_proto_t* fmsg = fty_proto_decode(&msg);
 
                 if (fty_proto_id(fmsg) == FTY_PROTO_ASSET) {
