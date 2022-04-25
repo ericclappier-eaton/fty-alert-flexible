@@ -1,6 +1,4 @@
 /*  =========================================================================
-    flexible_alert - Main class for evaluating alerts
-
     Copyright (C) 2016 - 2017 Tomas Halman
 
     This program is free software; you can redistribute it and/or modify
@@ -20,7 +18,24 @@
 */
 
 #pragma once
-#include <czmq.h>
+#include <fty_proto.h>
+#include <string>
 
-// Flexible alert actor
-void flexible_alert_actor(zsock_t* pipe, void* args);
+/// opacified structure
+typedef struct _asset_info_t asset_info_t;
+
+/// create a new asset_info_t* object from ASSET fty_proto_t* object
+/// returns a valid object if success, else NULL
+/// returned object must be destroyed by caller
+asset_info_t* asset_info_new(fty_proto_t* asset);
+
+/// destroy an asset_info_t* object
+/// self_p nullified
+void asset_info_destroy(asset_info_t** self_p);
+
+/// says if the given ASSET is described in self locations
+/// returns 1 if yes, else 0
+int asset_info_isInLocations(asset_info_t* self, const char* asset);
+
+/// DBG, dump asset locations
+std::string asset_info_dumpLocations(asset_info_t* self);

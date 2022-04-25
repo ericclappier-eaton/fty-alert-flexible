@@ -13,6 +13,8 @@ etn_target(static ${PROJECT_NAME}-lib
         rule.h
         vsjson.cc
         vsjson.h
+        asset_info.cc
+        asset_info.h
     USES_PRIVATE
         lua5.1
         czmq
@@ -20,6 +22,8 @@ etn_target(static ${PROJECT_NAME}-lib
         fty_shm
         fty_proto
         fty_common_logging
+        cxxtools
+        fty_common
     PRIVATE
 )
 
