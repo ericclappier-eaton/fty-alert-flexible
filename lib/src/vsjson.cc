@@ -486,15 +486,19 @@ char* vsjson_decode_string(const char* string)
     if (!string)
         return nullptr;
 
-    char* decoded = reinterpret_cast<char*>(malloc(strlen(string)));
+    size_t string_len = strlen(string);
+    if (string_len < 2)
+        return nullptr;
+
+    char* decoded = reinterpret_cast<char*>(malloc(string_len + 1));
     if (!decoded)
         return nullptr;
 
-    memset(decoded, 0, strlen(string));
+    memset(decoded, 0, string_len + 1);
     const char* src = string;
     char*       dst = decoded;
 
-    if (string[0] != '"' || string[strlen(string) - 1] != '"') {
+    if (string[0] != '"' || string[string_len - 1] != '"') {
         // no quotes, this is not json string
         free(decoded);
         return nullptr;
