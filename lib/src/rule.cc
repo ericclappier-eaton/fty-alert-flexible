@@ -606,13 +606,15 @@ static char* s_string_append(char** string_p, size_t* capacity, const char* appe
         char* tmp = reinterpret_cast<char*>(realloc(string, newcapacity));
         if (!tmp) {
             free(string);
+            *string_p = nullptr;
             *capacity = 0;
             return nullptr;
         }
         string    = tmp;
         *capacity = newcapacity;
     }
-    strncat(string, append, *capacity);
+
+    strcat(string, append);
     *string_p = string;
     return string;
 }

@@ -56,9 +56,6 @@ void rule_destroy(rule_t** self_p);
 /// Self test of this class
 void rule_test(bool verbose);
 
-/// Self test of this class
-void vsjson_test(bool verbose);
-
 /// Parse json rule from string
 int rule_parse(rule_t* self, const char* json);
 
