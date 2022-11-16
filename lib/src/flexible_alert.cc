@@ -147,7 +147,6 @@ static void s_republish_asset(flexible_alert_t* self, const std::vector<std::str
         return;
 
     zmsg_t* msg = zmsg_new();
-    zmsg_addstr(msg, "REPUBLISH");
 
     std::string assetsList; // for logs
     for (auto& asset : assets) {
@@ -157,7 +156,7 @@ static void s_republish_asset(flexible_alert_t* self, const std::vector<std::str
         assetsList += (assetsList.empty() ? "": " ") + asset;
     }
 
-    if (zmsg_size(msg) < 2) { // nothing to send (assets is empty)
+    if (zmsg_size(msg) == 0) { // nothing to send (assets is empty)
         log_trace("nothing to REPUBLISH");
         zmsg_destroy(&msg);
         return;
@@ -166,12 +165,10 @@ static void s_republish_asset(flexible_alert_t* self, const std::vector<std::str
     log_trace("%s REPUBLISH %s", AGENT_FTY_ASSET, assetsList.c_str());
     int r = mlm_client_sendto(self->mlm, AGENT_FTY_ASSET, "REPUBLISH", NULL, 5000, &msg);
     zmsg_destroy(&msg);
+    //no response expected
+
     if (r != 0) {
         log_error("%s REPUBLISH %s failed", AGENT_FTY_ASSET, assetsList.c_str());
-    }
-    else { // consume response?
-        //msg = mlm_client_recv(self->mlm);
-        //zmsg_destroy(&msg);
     }
 }
 
