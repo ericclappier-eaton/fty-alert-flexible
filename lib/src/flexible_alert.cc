@@ -985,7 +985,6 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
                 }
             }
             if (!isFound) {
-                logDebug("*** match cat");
                 return false;
             }
         }
