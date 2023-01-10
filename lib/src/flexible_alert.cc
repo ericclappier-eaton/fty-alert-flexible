@@ -976,10 +976,17 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
         // category
         if (!filter.categoryTokens.empty()) {
             std::vector<std::string> ruleTokens = categoryTokensFromRuleName(rule_name(rule));
+            bool isFound = false;
             for (auto& token : filter.categoryTokens) {
                 auto it = std::find(ruleTokens.begin(), ruleTokens.end(), token);
-                if (it == ruleTokens.end())
-                    { return false; }
+                if (it != ruleTokens.end()) {
+                    isFound = true;
+                    break;
+                }
+            }
+            if (!isFound) {
+                logDebug("*** match cat");
+                return false;
             }
         }
 
