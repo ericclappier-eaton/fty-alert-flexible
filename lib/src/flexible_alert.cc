@@ -924,10 +924,15 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
         auto it = CAT_TOKENS.find(ruleNamePrefix); // search for a rule
         if (it == CAT_TOKENS.end()) { // else, search for a enumerated rule
             for (auto &rex : RULES_1_N) {
-                std::smatch m;
-                if (std::regex_match(ruleNamePrefix, m, rex.first)) {
-                    it = CAT_TOKENS.find(rex.second); // redirect search
-                    break;
+                try {
+                    std::smatch m;
+                    if (std::regex_match(ruleNamePrefix, m, rex.first)) {
+                        it = CAT_TOKENS.find(rex.second); // redirect search
+                        break;
+                    }
+                }
+                catch (const std::exception& e) {
+                    log_error("exception rex (e: %s)", e.what());
                 }
             }
         }
@@ -976,10 +981,16 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
         // category
         if (!filter.categoryTokens.empty()) {
             std::vector<std::string> ruleTokens = categoryTokensFromRuleName(rule_name(rule));
+            bool isFound = false;
             for (auto& token : filter.categoryTokens) {
                 auto it = std::find(ruleTokens.begin(), ruleTokens.end(), token);
-                if (it == ruleTokens.end())
-                    { return false; }
+                if (it != ruleTokens.end()) {
+                    isFound = true;
+                    break;
+                }
+            }
+            if (!isFound) {
+                return false;
             }
         }
 
