@@ -109,7 +109,7 @@ int main (int argc, char *argv [])
         log_info("fty_alert_flexible - Loading config file '%s'", config_file);
 
         // verbose
-        if (streq (zconfig_get (config, "server/verbose", (verbose?"1":"0")), "1")) {
+        if (streq(s_get (config, "server/verbose", (verbose ? "1" : "0")), "1")) {
             verbose = true;
         }
         //rules

@@ -664,12 +664,16 @@ static void flexible_alert_handle_asset(flexible_alert_t* self, fty_proto_t* fty
             log_trace(ANSI_COLOR_RESET);
         #endif
             if (update) {
-                zhash_update(self->assetInfo, assetname, asset_info_new(ftymsg));
-                zhash_freefn(self->assetInfo, assetname, asset_info_freefn);
-
-                asset_info_t* info = reinterpret_cast<asset_info_t*>(zhash_lookup(self->assetInfo, assetname));
-                log_trace(ANSI_COLOR_CYAN "Update %s assetInfo, locations: %s" ANSI_COLOR_RESET,
-                    assetname, asset_info_dumpLocations(info).c_str());
+                asset_info_t* info = asset_info_new(ftymsg);
+                if (!info) {
+                    log_error("asset_info_new failed (%s)", assetname);
+                }
+                else {
+                    zhash_update(self->assetInfo, assetname, info);
+                    zhash_freefn(self->assetInfo, assetname, asset_info_freefn);
+                    log_trace(ANSI_COLOR_CYAN "Update %s assetInfo, locations: %s" ANSI_COLOR_RESET,
+                        assetname, asset_info_dumpLocations(info).c_str());
+                }
             }
         }
 
