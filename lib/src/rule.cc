@@ -246,8 +246,9 @@ static int rule_json_callback(const char* locator, const char* value, void* data
 int rule_parse(rule_t* self, const char* json)
 {
     int r = vsjson_parse(json, rule_json_callback, self, true);
-    if (r != 0)
+    if (r != 0) {
         log_error("vsjson_parse failed (r: %d)\njson:\n%s\n", r, json);
+    }
     return r;
 }
 
@@ -402,19 +403,32 @@ int rule_load(rule_t* self, const char* path)
     }
 
     struct stat rstat;
+    memset(&rstat, 0, sizeof(rstat));
     if (fstat(fd, &rstat) != 0) {
-        log_error("can't stat file %s", path);
+        log_error("can't stat file %s (%s)", path, strerror(errno));
+        close(fd);
+        return -1;
     }
 
     size_t capacity = size_t(rstat.st_size + 1);
-    char*  buffer   = reinterpret_cast<char*>(zmalloc(capacity + 1));
-    assert(buffer);
+    char* buffer = reinterpret_cast<char*>(zmalloc(capacity + 1));
+    if (!buffer) {
+        log_error("memory allocation failed");
+        close(fd);
+        return -1;
+    }
+    memset(buffer, 0, capacity + 1);
 
     if (read(fd, buffer, capacity) == -1) {
         log_error("Error while reading rule %s", path);
+        free(buffer);
+        close(fd);
+        return -1;
     }
+
     close(fd);
 
+    buffer[capacity] = 0;
     int result = rule_parse(self, buffer);
     free(buffer);
     return result;
@@ -437,15 +451,20 @@ void rule_merge(rule_t* old_rule, rule_t* new_rule)
 int rule_save(rule_t* self, const char* path)
 {
     int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-    if (fd == -1)
+    if (fd == -1) {
+        log_error("open %s failed (%s)", path, strerror(errno));
         return -1;
-
+    }
     char* json = rule_json(self);
-    if (!json)
+    if (!json) {
+        log_error("rule_json() failed");
+        close(fd);
         return -2;
+    }
     if (write(fd, json, strlen(json)) == -1) {
         log_error("Error while writting rule %s", path);
         zstr_free(&json);
+        close(fd);
         return -3;
     }
     zstr_free(&json);
@@ -591,13 +610,20 @@ static char* s_string_append(char** string_p, size_t* capacity, const char* appe
 
     char* string = *string_p;
     if (!string) {
-        string    = reinterpret_cast<char*>(zmalloc(512));
+        string = reinterpret_cast<char*>(zmalloc(512));
+        if (!string) {
+            *string_p = nullptr;
+            *capacity = 0;
+            return nullptr;
+        }
+        string[0] = 0;
+        *string_p = string;
         *capacity = 512;
     }
 
-    size_t l1       = strlen(string);
-    size_t l2       = strlen(append);
-    size_t required = l1 + l2 + 1;
+    size_t ls       = strlen(string);
+    size_t la       = strlen(append);
+    size_t required = ls + la + 1;
     if (*capacity < required) {
         size_t newcapacity = *capacity;
         while (newcapacity < required) {
@@ -614,7 +640,9 @@ static char* s_string_append(char** string_p, size_t* capacity, const char* appe
         *capacity = newcapacity;
     }
 
-    strcat(string, append);
+    strncat(string, append, la);
+    string[required] = 0;
+
     *string_p = string;
     return string;
 }
