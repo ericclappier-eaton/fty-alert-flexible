@@ -466,15 +466,19 @@ static void flexible_alert_handle_metric(flexible_alert_t* self, fty_proto_t** f
         return;
     }
 
+    if (!self->rules) { // nothing to do (no rule)
+        zstr_free(&qty_dup);
+        return;
+    }
+ 
     // this asset has some evaluation functions
     bool  metric_saved = false;
-    char* func         = reinterpret_cast<char*>(zlist_first(functions_for_asset));
+    char* func = reinterpret_cast<char*>(zlist_first(functions_for_asset));
     for (; func; func = reinterpret_cast<char*>(zlist_next(functions_for_asset))) {
         rule_t* rule = reinterpret_cast<rule_t*>(zhash_lookup(self->rules, func));
-        if (!rule)
+        if (!(rule && rule_metric_exists(rule, qty_dup))) {
             continue;
-        if (!rule_metric_exists(rule, qty_dup))
-            continue;
+        }
 
         log_debug("qty '%s' exists in '%s'", qty_dup, rule_name(rule));
 
