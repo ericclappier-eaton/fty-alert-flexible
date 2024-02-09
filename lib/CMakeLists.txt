@@ -16,7 +16,7 @@ etn_target(static ${PROJECT_NAME}-lib
         asset_info.cc
         asset_info.h
     USES_PRIVATE
-        lua5.1
+        lua5.4
         czmq
         mlm
         fty_shm
