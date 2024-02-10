@@ -20,8 +20,9 @@
 */
 
 #pragma once
+
 #include <czmq.h>
-#include <lua.h>
+#include <lua.hpp>
 
 #define RULE_ERROR 255
 

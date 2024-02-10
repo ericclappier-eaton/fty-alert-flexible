@@ -16,13 +16,13 @@ etn_target(static ${PROJECT_NAME}-lib
         asset_info.cc
         asset_info.h
     USES_PRIVATE
+        cxxtools
         lua5.4
         czmq
         mlm
         fty_shm
         fty_proto
         fty_common_logging
-        cxxtools
         fty_common
     PRIVATE
 )

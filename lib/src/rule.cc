@@ -29,9 +29,6 @@
 #include "rule.h"
 #include "vsjson.h"
 #include <fty_log.h>
-#include <lauxlib.h>
-#include <lua.h>
-#include <lualib.h>
 
 //  Structure of our class
 
