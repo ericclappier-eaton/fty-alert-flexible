@@ -1,11 +1,10 @@
 cmake_minimum_required(VERSION 3.13)
 cmake_policy(VERSION 3.13)
 
-##############################################################################################################
-
-project(fty-alert-flexible VERSION 1.0.0)
-
-########################################################################################################################
+project(fty-alert-flexible
+    VERSION 1.0.0
+    DESCRIPTION "fty-alert-flexible"
+)
 
 find_package(fty-cmake PATHS ${CMAKE_BINARY_DIR})
 
