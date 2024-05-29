@@ -20,7 +20,7 @@
 */
 
 #include "flexible_alert.h"
-#include "fty_alert_flexible_audit_log.h"
+#include "audit_log.h"
 #include "rule.h"
 #include "asset_info.h"
 #include <malamute.h>
@@ -346,7 +346,7 @@ static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const 
         "ERROR"
     ;
 
-    log_info_alarms_flexible_audit("%8s %s (%s)", auditDesc.c_str(), rule_name(rule), auditValues.c_str());
+    audit_log_info("%8s %s (%s)", auditDesc.c_str(), rule_name(rule), auditValues.c_str());
 }
 
 //  --------------------------------------------------------------------------

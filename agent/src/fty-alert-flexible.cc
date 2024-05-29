@@ -26,7 +26,7 @@
 @end
 */
 
-#include "fty_alert_flexible_audit_log.h"
+#include "audit_log.h"
 #include "flexible_alert.h"
 #include <fty_log.h>
 #include <fty_proto.h>
@@ -140,7 +140,7 @@ int main (int argc, char *argv [])
     }
 
     // initialize log for auditability
-    AuditLogManager::init(ACTOR_NAME);
+    AuditLog::init(ACTOR_NAME);
 
     log_debug ("%s starting...", ACTOR_NAME);
 
@@ -194,7 +194,7 @@ int main (int argc, char *argv [])
     zconfig_destroy(&config);
 
     // release audit context
-    AuditLogManager::deinit();
+    AuditLog::deinit();
 
     return EXIT_SUCCESS;
 }

@@ -1,5 +1,5 @@
 /*  =========================================================================
-    fty_alert_flexible_audit_log - Manage audit log
+    audit_log - Manage audit log
 
     Copyright (C) 2014 - 2021 Eaton
 
@@ -23,27 +23,11 @@
 
 #include <fty_log.h>
 
-/* Prints message in Audit Log with DEBUG level. */
-#define log_debug_alarms_flexible_audit(...) log_debug_log(AuditLogManager::getInstance(), __VA_ARGS__);
-
-/* Prints message in Audit Log with INFO level. */
-#define log_info_alarms_flexible_audit(...) log_info_log(AuditLogManager::getInstance(), __VA_ARGS__);
-
-/* Prints message in Audit Log with WARNING level*/
-#define log_warning_alarms_flexible_audit(...) log_warning_log(AuditLogManager::getInstance(), __VA_ARGS__);
-
-/* Prints message in Audit Log with ERROR level*/
-#define log_error_alarms_flexible_audit(...) log_error_log(AuditLogManager::getInstance(), __VA_ARGS__);
-
-/* Prints message in Audit Log with FATAL level. */
-#define log_fatal_alarms_flexible_audit(...) log_fatal_log(AuditLogManager::getInstance(), __VA_ARGS__);
-
-// singleton for audit logger management
-class AuditLogManager
+class AuditLog
 {
 private:
-    AuditLogManager()  = default;
-    ~AuditLogManager() = default;
+    AuditLog()  = default;
+    ~AuditLog() = default;
     static Ftylog* _auditLogger;
 
 public:
@@ -52,3 +36,7 @@ public:
     static void    init(const std::string& serviceName);
     static void    deinit();
 };
+
+// audit log macros (printf va format)
+#define audit_log_info(...) log_info_log(AuditLog::getInstance(), __VA_ARGS__);
+#define audit_log_error(...) log_error_log(AuditLog::getInstance(), __VA_ARGS__);

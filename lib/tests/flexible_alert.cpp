@@ -1,5 +1,5 @@
 #include "src/flexible_alert.h"
-#include "src/fty_alert_flexible_audit_log.h"
+#include "src/audit_log.h"
 #include <catch2/catch.hpp>
 #include <fty_shm.h>
 #include <malamute.h>
@@ -11,14 +11,11 @@ TEST_CASE("flexible alert test")
     const char* SELFTEST_DIR_RW = ".";
 
     // initialize log for auditability
-    AuditLogManager::init("flexible-server-test");
+    AuditLog::init("flexible-alert-test");
     // logs audit, see /etc/fty/ftylog.cfg (requires privileges)
-    log_debug_alarms_flexible_audit("flexible-server-test audit test %s", "DEBUG");
-    log_info_alarms_flexible_audit("flexible-server-test audit test %s", "INFO");
-    log_warning_alarms_flexible_audit("flexible-server-test audit test %s", "WARNING");
-    log_error_alarms_flexible_audit("flexible-server-test audit test %s", "ERROR");
-    log_fatal_alarms_flexible_audit("flexible-server-test audit test %s", "FATAL");
-    //AuditLogManager::deinit(); return;
+    audit_log_info("flexible-alert-test audit test %s", "INFO");
+    audit_log_error("flexible-alert-test audit test %s", "ERROR");
+    //AuditLog::deinit(); return;
 
     fty_shm_set_test_dir(SELFTEST_DIR_RW);
     fty_shm_set_default_polling_interval(5);
@@ -298,5 +295,5 @@ TEST_CASE("flexible alert test")
     zactor_destroy(&malamute);
     fty_shm_delete_test_dir();
 
-    AuditLogManager::deinit();
+    AuditLog::deinit();
 }
