@@ -337,7 +337,6 @@ static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const 
     zlist_destroy(&params);
 
     // log audit alarm
-
     std::string auditDesc =
         (result == 0 && isMetricMissing)  ? "UNKNOWN" : // UNKNOWN
         (result == 0 && !isMetricMissing) ? "RESOLVED" : // RESOLVED
@@ -345,7 +344,6 @@ static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const 
         (result == 2 || result == -2)     ? "ACTIVE/C" : // ACTIVE/CRITICAL (high/low)
         "ERROR"
     ;
-
     audit_log_info("%8s %s (%s)", auditDesc.c_str(), rule_name(rule), auditValues.c_str());
 }
 
