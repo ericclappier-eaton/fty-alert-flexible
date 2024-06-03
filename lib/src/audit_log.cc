@@ -1,5 +1,5 @@
 /*  =========================================================================
-    fty_alert_flexible_audit_log - Manage audit log
+    audit_log - Manage audit log
 
     Copyright (C) 2014 - 2021 Eaton
 
@@ -19,12 +19,12 @@
     =========================================================================
 */
 
-#include "fty_alert_flexible_audit_log.h"
+#include "audit_log.h"
 
-Ftylog* AuditLogManager::_auditLogger = nullptr;
+Ftylog* AuditLog::_auditLogger = nullptr;
 
 //  init audit logger
-void AuditLogManager::init(const std::string& serviceName)
+void AuditLog::init(const std::string& serviceName)
 {
     if (!_auditLogger) {
         const char* loggerName = "audit/alarms";
@@ -36,13 +36,13 @@ void AuditLogManager::init(const std::string& serviceName)
         }
         else {
             log_info("Audit logger initialization (%s, %s)", loggerName, confFileName);
-            log_info_alarms_flexible_audit("Audit logger initialization (%s)", serviceName.c_str());
+            audit_log_info("Audit logger initialization (%s)", serviceName.c_str());
         }
     }
 }
 
 //  deinit audit logger
-void AuditLogManager::deinit()
+void AuditLog::deinit()
 {
     if (_auditLogger) {
         ftylog_delete(_auditLogger);
@@ -51,7 +51,7 @@ void AuditLogManager::deinit()
 }
 
 //  return audit logger instance
-Ftylog* AuditLogManager::getInstance()
+Ftylog* AuditLog::getInstance()
 {
     return _auditLogger;
 }

@@ -20,7 +20,7 @@
 */
 
 #include "flexible_alert.h"
-#include "fty_alert_flexible_audit_log.h"
+#include "audit_log.h"
 #include "rule.h"
 #include "asset_info.h"
 #include <malamute.h>
@@ -271,13 +271,18 @@ static void flexible_alert_send_alert(
     zmsg_destroy(&alert);
 }
 
+static std::string auditValue(const std::string& param, const char* value)
+{
+    return param + "=" + std::string{value ? value : ""};
+}
+
 static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const char* assetname, const char* ename)
 {
     zlist_t* params = zlist_new();
     zlist_autofree(params);
 
     bool                     isMetricMissing = false;
-    std::vector<std::string> auditValues;
+    std::string auditValues;
 
     // prepare lua function parameters
     int         ttl   = 0;
@@ -289,10 +294,9 @@ static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const 
         if (!ftymsg) {
             // some metrics are missing
             log_trace("abort evaluation of rule %s because %s metric is missing", rule_name(rule), topic);
-            std::stringstream ss;
-            ss << param << " = " << "NaN";
-            auditValues.push_back(ss.str());
+
             isMetricMissing = true;
+            auditValues += (auditValues.empty() ? "" : ", ") + auditValue(param, NULL);
 
             zstr_free(&topic);
             break;
@@ -305,9 +309,7 @@ static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const 
         const char* value = fty_proto_value(ftymsg);
         zlist_append(params, const_cast<char*>(value));
 
-        std::stringstream ss;
-        ss << param << " = " << value;
-        auditValues.push_back(ss.str());
+        auditValues += (auditValues.empty() ? "" : ", ") + auditValue(param, value);
 
         param = rule_metric_next(rule);
     }
@@ -335,42 +337,14 @@ static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const 
     zlist_destroy(&params);
 
     // log audit alarm
-
-    std::string sResult;
-    switch (result) {
-        case 0:
-            sResult = !isMetricMissing ? "OK" : "MISSING_VALUE";
-            break;
-        case 1:
-            sResult = "HIGH_WARNING";
-            break;
-        case 2:
-            sResult = "HIGH_CRITICAL";
-            break;
-        case -1:
-            sResult = "LOW_WARNING";
-            break;
-        case -2:
-            sResult = "LOW_CRITICAL";
-            break;
-        case 255:
-            sResult = "RULE_ERROR";
-            break;
-        default:
-            sResult = "BAD_VALUE";
-            break;
-    }
-
-    std::stringstream ss;
-    std::for_each(begin(auditValues), end(auditValues), [&ss](const std::string& elem) {
-        if (ss.str().empty())
-            ss << elem;
-        else
-            ss << ", " << elem;
-    });
-
-    log_info_alarms_flexible_audit("Evaluate rule '%s', assetname: %s [%s] -> result = %s",
-        rule_name(rule), assetname, ss.str().c_str(), sResult.c_str());
+    std::string auditDesc =
+        (result == 0 && isMetricMissing)  ? "UNKNOWN" : // UNKNOWN
+        (result == 0 && !isMetricMissing) ? "RESOLVED" : // RESOLVED
+        (result == 1 || result == -1)     ? "ACTIVE/W" : // ACTIVE/WARNING (high/low)
+        (result == 2 || result == -2)     ? "ACTIVE/C" : // ACTIVE/CRITICAL (high/low)
+        "ERROR"
+    ;
+    audit_log_info("%8s %s (%s)", auditDesc.c_str(), rule_name(rule), auditValues.c_str());
 }
 
 //  --------------------------------------------------------------------------
@@ -470,7 +444,7 @@ static void flexible_alert_handle_metric(flexible_alert_t* self, fty_proto_t** f
         zstr_free(&qty_dup);
         return;
     }
- 
+
     // this asset has some evaluation functions
     bool  metric_saved = false;
     char* func = reinterpret_cast<char*>(zlist_first(functions_for_asset));

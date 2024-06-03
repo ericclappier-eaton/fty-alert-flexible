@@ -7,8 +7,8 @@ etn_target(static ${PROJECT_NAME}-lib
     SOURCES
         flexible_alert.cc
         flexible_alert.h
-        fty_alert_flexible_audit_log.cc
-        fty_alert_flexible_audit_log.h
+        audit_log.cc
+        audit_log.h
         rule.cc
         rule.h
         vsjson.cc
