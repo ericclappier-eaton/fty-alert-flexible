@@ -353,15 +353,16 @@ static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const 
 static void flexible_alert_clean_metrics(flexible_alert_t* self)
 {
     zlist_t* topics = zhash_keys(self->metrics);
-    char*    topic  = reinterpret_cast<char*>(zlist_first(topics));
+    char* topic = reinterpret_cast<char*>(zlist_first(topics));
     while (topic) {
         fty_proto_t* ftymsg = reinterpret_cast<fty_proto_t*>(zhash_lookup(self->metrics, topic));
-        if (int(fty_proto_time(ftymsg) + fty_proto_ttl(ftymsg)) < time(nullptr)) {
-            log_warning("delete topic %s", topic);
+        if (int64_t(fty_proto_time(ftymsg) + fty_proto_ttl(ftymsg)) < time(nullptr)) {
+            log_debug("delete topic %s", topic);
             zhash_delete(self->metrics, topic);
         }
         topic = reinterpret_cast<char*>(zlist_next(topics));
     }
+
     zlist_destroy(&topics);
 }
 
@@ -369,15 +370,15 @@ static void flexible_alert_clean_metrics(flexible_alert_t* self)
 // returns true if metric message belong to gpi sensor
 static bool is_gpi_metric(fty_proto_t* metric)
 {
-    assert(metric);
-    const char* port     = fty_proto_aux_string(metric, FTY_PROTO_METRICS_AUX_PORT, "");
-    const char* ext_port = fty_proto_aux_string(metric, "ext-port", "");
-    if (strstr(port, "GPI") || ext_port != NULL)
-        return true;
-    else
-        return false;
+    if (metric) {
+        const char* port     = fty_proto_aux_string(metric, FTY_PROTO_METRICS_AUX_PORT, "");
+        const char* ext_port = fty_proto_aux_string(metric, "ext-port", "");
+        if (strstr(port, "GPI") || ext_port != NULL) {
+            return true;
+        }
+    }
+    return false;
 }
-
 
 //  --------------------------------------------------------------------------
 //  Function handles incoming metrics, drives lua evaluation
@@ -388,8 +389,9 @@ static void flexible_alert_handle_metric(flexible_alert_t* self, fty_proto_t** f
         return;
 
     fty_proto_t* ftymsg = *ftymsg_p;
-    if (fty_proto_id(ftymsg) != FTY_PROTO_METRIC)
+    if (fty_proto_id(ftymsg) != FTY_PROTO_METRIC) {
         return;
+    }
 
     if (isShm) {
         char* subject = NULL;
@@ -398,7 +400,8 @@ static void flexible_alert_handle_metric(flexible_alert_t* self, fty_proto_t** f
             flexible_alert_clean_metrics(self);
         }
         zstr_free(&subject);
-    } else if (zhash_lookup(self->metrics, mlm_client_subject(self->mlm))) {
+    }
+    else if (zhash_lookup(self->metrics, mlm_client_subject(self->mlm))) {
         flexible_alert_clean_metrics(self);
     }
 
@@ -409,23 +412,25 @@ static void flexible_alert_handle_metric(flexible_alert_t* self, fty_proto_t** f
 
     char* qty_dup = strdup(quantity);
 
-//    log_trace("handle metric: assetname: %s, qty: %s, isShm: %s", assetname, qty_dup, (isShm ? "true" : "false"));
+    //log_trace("handle metric: assetname: %s, qty: %s, isShm: %s", assetname, qty_dup, (isShm ? "true" : "false"));
 
     // fix quantity for sensors connected to other sensors
     if (extport) {
         // only sensors connected to other sensors have ext-name set
         const char* qty_len_helper = quantity;
         // second . marks the length
-        while ((*qty_len_helper != '\0') && (*qty_len_helper != '.'))
+        while ((*qty_len_helper != '\0') && (*qty_len_helper != '.')) {
             ++qty_len_helper;
+        }
         ++qty_len_helper;
         if (*qty_len_helper == '\0') {
             log_error("malformed quantity");
             zstr_free(&qty_dup);
             return;
         }
-        while ((*qty_len_helper != '\0') && (*qty_len_helper != '.'))
+        while ((*qty_len_helper != '\0') && (*qty_len_helper != '.')) {
             ++qty_len_helper;
+        }
 
         zstr_free(&qty_dup);
         qty_dup = strndup(quantity, size_t(qty_len_helper - quantity));
@@ -473,6 +478,7 @@ static void flexible_alert_handle_metric(flexible_alert_t* self, fty_proto_t** f
         // evaluate
         flexible_alert_evaluate(self, rule, assetname, ename);
     }
+
     zstr_free(&qty_dup);
 }
 
@@ -497,6 +503,7 @@ static void flexible_alert_handle_metric_sensor(flexible_alert_t* self, fty_prot
 {
     if (!self || !ftymsg_p || !*ftymsg_p)
         return;
+
     fty_proto_t* ftymsg = *ftymsg_p;
     if (fty_proto_id(ftymsg) != FTY_PROTO_METRIC)
         return;
@@ -525,12 +532,11 @@ static int is_rule_for_this_asset(rule_t* rule, fty_proto_t* ftymsg)
     const char* subtype = fty_proto_aux_string(ftymsg, FTY_PROTO_ASSET_SUBTYPE, "");
     if (streq(subtype, "sensorgpio")) {
         if (rule_asset_exists(rule, fty_proto_name(ftymsg)) &&
-            rule_model_exists(rule, fty_proto_ext_string(ftymsg, FTY_PROTO_ASSET_EXT_MODEL, ""))) {
+            rule_model_exists(rule, fty_proto_ext_string(ftymsg, FTY_PROTO_ASSET_EXT_MODEL, ""))
+        ) {
             return 1;
         }
-        else {
-            return 0;
-        }
+        return 0;
     }
 
     if (rule_asset_exists(rule, fty_proto_name(ftymsg)))
@@ -1024,7 +1030,8 @@ static zmsg_t* flexible_alert_get_rule(flexible_alert_t* self, char* name)
         zmsg_addstr(reply, "OK");
         zmsg_addstr(reply, json);
         zstr_free(&json);
-    } else {
+    }
+    else {
         zmsg_addstr(reply, "ERROR");
         zmsg_addstr(reply, "NOT_FOUND");
     }
@@ -1051,13 +1058,15 @@ static zmsg_t* flexible_alert_delete_rule(flexible_alert_t* self, const char* na
             log_trace("delete '%s'", path);
             zmsg_addstr(reply, "OK");
             zhash_delete(self->rules, name);
-        } else {
+        }
+        else {
             log_error("Can't delete '%s'", path);
             zmsg_addstr(reply, "ERROR");
             zmsg_addstr(reply, "CAN_NOT_REMOVE");
         }
         zstr_free(&path);
-    } else {
+    }
+    else {
         zmsg_addstr(reply, "ERROR");
         zmsg_addstr(reply, "DOES_NOT_EXISTS");
     }
@@ -1109,7 +1118,8 @@ static zmsg_t* flexible_alert_add_rule(
             log_error("Error while saving rule %s (%i)", path, r);
             zmsg_addstr(reply, "ERROR");
             zmsg_addstr(reply, "SAVE_FAILURE");
-        } else {
+        }
+        else {
             zmsg_addstr(reply, "OK");
             zmsg_addstr(reply, json);
 
@@ -1145,13 +1155,23 @@ static void flexible_alert_metric_polling(zsock_t* pipe, void* args)
 {
     const char* actor_name = "flexible_alert_metric_polling";
 
-    zpoller_t* poller = zpoller_new(pipe, NULL);
-    zsock_signal(pipe, 0);
+    zlist_t* params = reinterpret_cast<zlist_t*>(args);
+    char* assets_pattern  = params ? reinterpret_cast<char*>(zlist_first(params)) : NULL;
+    char* metrics_pattern = params ? reinterpret_cast<char*>(zlist_next(params)) : NULL;
+    flexible_alert_t* self = params ? reinterpret_cast<flexible_alert_t*>(zlist_next(params)) : NULL;
 
-    zlist_t*          params          = reinterpret_cast<zlist_t*>(args);
-    char*             assets_pattern  = reinterpret_cast<char*>(zlist_first(params));
-    char*             metrics_pattern = reinterpret_cast<char*>(zlist_next(params));
-    flexible_alert_t* self            = reinterpret_cast<flexible_alert_t*>(zlist_next(params));
+    if (!(self && assets_pattern && metrics_pattern)) {
+        log_error("Invalid args");
+        return;
+    }
+
+    zpoller_t* poller = zpoller_new(pipe, NULL);
+    if (!poller) {
+        log_error("zpoller_new failed");
+        return;
+    }
+
+    zsock_signal(pipe, 0);
 
     log_info("%s started (assets_pattern: %s, metrics_pattern: %s)",
         actor_name, assets_pattern, metrics_pattern);
@@ -1163,23 +1183,25 @@ static void flexible_alert_metric_polling(zsock_t* pipe, void* args)
         }
 
         if (zpoller_expired(poller)) {
-            fty::shm::shmMetrics result;
-            fty::shm::read_metrics(assets_pattern, metrics_pattern, result);
+            fty::shm::shmMetrics metrics;
+            fty::shm::read_metrics(assets_pattern, metrics_pattern, metrics);
+
             log_debug("%s: read %zu metrics from SHM (assets: %s, metrics: %s)",
-                actor_name, result.size(), assets_pattern, metrics_pattern);
-            for (auto& element : result) {
-                flexible_alert_handle_metric(self, &element, true);
+                actor_name, metrics.size(), assets_pattern, metrics_pattern);
+
+            for (auto& metric : metrics) {
+                flexible_alert_handle_metric(self, &metric, true);
             }
-        } else if (which == pipe) {
+        }
+        else if (which == pipe) {
             zmsg_t* msg = zmsg_recv(pipe);
             char* cmd = zmsg_popstr(msg);
-            if (cmd && streq(cmd, "$TERM")) {
-                zstr_free(&cmd);
-                zmsg_destroy(&msg);
-                break;
-            }
+            bool term = (cmd && streq(cmd, "$TERM"));
             zstr_free(&cmd);
             zmsg_destroy(&msg);
+            if (term) {
+                break;
+            }
         }
     }
 
@@ -1201,13 +1223,18 @@ void flexible_alert_actor(zsock_t* pipe, void* args)
         return;
     }
 
-    zsock_signal(pipe, 0);
+    zpoller_t* poller = zpoller_new(mlm_client_msgpipe(self->mlm), pipe, NULL);
+    if (!poller) {
+        log_error("zpoller_new failed");
+        flexible_alert_destroy(&self);
+        return;
+    }
 
     zlist_t* params = reinterpret_cast<zlist_t*>(args);
     zlist_append(params, self);
     zactor_t* metric_polling = zactor_new(flexible_alert_metric_polling, params);
 
-    zpoller_t* poller = zpoller_new(mlm_client_msgpipe(self->mlm), pipe, NULL);
+    zsock_signal(pipe, 0);
 
     log_info("%s started", actor_name);
 
@@ -1220,14 +1247,13 @@ void flexible_alert_actor(zsock_t* pipe, void* args)
         if (which == pipe) {
             zmsg_t* msg = zmsg_recv(pipe);
             char*   cmd = zmsg_popstr(msg);
+            bool term{false};
 
             if (!cmd) {
                 log_debug("Invalid command.");
             }
             else if (streq(cmd, "$TERM")) {
-                zstr_free(&cmd);
-                zmsg_destroy(&msg);
-                break;
+                term = true;
             }
             else if (streq(cmd, "BIND")) {
                 char* endpoint = zmsg_popstr(msg);
@@ -1262,6 +1288,9 @@ void flexible_alert_actor(zsock_t* pipe, void* args)
             }
             zstr_free(&cmd);
             zmsg_destroy(&msg);
+            if (term) {
+                break;
+            }
         }
         else if (which == mlm_client_msgpipe(self->mlm)) {
             zmsg_t* msg = mlm_client_recv(self->mlm);
@@ -1315,45 +1344,51 @@ void flexible_alert_actor(zsock_t* pipe, void* args)
                 zmsg_t* reply = NULL;
                 if (!cmd) {
                     log_error("command is NULL");
-                } else if (streq(cmd, "LIST")) {
+                }
+                else if (streq(cmd, "LIST")) {
                     // request: LIST/type/rule_class
                     // reply: LIST/type/rule_class/rule1/.../ruleN
                     // reply: ERROR/reason
                     log_info("%s %s %s", cmd, p1, p2);
                     reply = flexible_alert_list_rules(self, p1, p2);
-                } else if (streq(cmd, COMMAND_LIST2)) { // LIST (version 2)
+                }
+                else if (streq(cmd, COMMAND_LIST2)) { // LIST (version 2)
                     // request: <cmd>/jsonPayload
                     // reply: <cmd>/jsonPayload/rule1/.../ruleN
                     // reply: ERROR/reason
                     log_info("%s %s", cmd, p1);
                     reply = flexible_alert_list_rules2(self, p1);
-                } else if (streq(cmd, "GET")) {
+                }
+                else if (streq(cmd, "GET")) {
                     // request: GET/name
                     // reply: OK/rulejson
                     // reply: ERROR/reason
                     log_info("%s %s", cmd, p1);
                     reply = flexible_alert_get_rule(self, p1);
-                } else if (streq(cmd, "ADD")) {
+                }
+                else if (streq(cmd, "ADD")) {
                     // request: ADD/rulejson -- this is create
                     // request: ADD/rulejson/rulename -- this is replace
                     // reply: OK/rulejson
                     // reply: ERROR/reason
                     log_info("%s %s %s (incomplete: %s)", cmd, p1, p2, (incomplete ? "true" : "false"));
                     reply = flexible_alert_add_rule(self, p1, p2, incomplete, ruledir);
-                } else if (streq(cmd, "DELETE")) {
+                }
+                else if (streq(cmd, "DELETE")) {
                     // request: DELETE/name
                     // reply: DELETE/name/OK
                     // reply: DELETE/name/ERROR/reason
                     log_info("%s %s", cmd, p1);
                     reply = flexible_alert_delete_rule(self, p1, ruledir);
-                } else {
+                }
+                else {
                     log_warning("command '%s' not handled", cmd);
                 }
 
                 if (reply) {
-                    mlm_client_sendto(self->mlm, mlm_client_sender(self->mlm), mlm_client_subject(self->mlm),
+                    int r = mlm_client_sendto(self->mlm, mlm_client_sender(self->mlm), mlm_client_subject(self->mlm),
                         mlm_client_tracker(self->mlm), 1000, &reply);
-                    if (reply) {
+                    if (r != 0) {
                         log_error("Failed to send %s reply to %s", cmd, mlm_client_sender(self->mlm));
                     }
                 }
