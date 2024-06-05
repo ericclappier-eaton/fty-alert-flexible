@@ -40,12 +40,6 @@ struct rule_t
     zhashx_t*  variables; /// lua context global variables
     char*      evaluation;
     lua_State* lua;
-    struct
-    {
-        char* action;
-        char* act_asset;
-        char* act_mode;
-    } parser; /// json parser state data
 };
 
 /// Create a new rule
@@ -54,11 +48,12 @@ rule_t* rule_new(void);
 /// Destroy the rule
 void rule_destroy(rule_t** self_p);
 
-/// Self test of this class
-void rule_test(bool verbose);
-
-/// Parse json rule from string
+/// Parse rule from json string
 int rule_parse(rule_t* self, const char* json);
+
+/// Serialize rule to json
+/// Caller must free the returned string
+char* rule_serialize(rule_t* self);
 
 /// Get rule name
 const char* rule_name(rule_t* self);
@@ -103,11 +98,9 @@ void rule_merge(rule_t* old_rule, rule_t* new_rule);
 /// Save json rule to file
 int rule_save(rule_t* self, const char* path);
 
-/// Convert rule back to json
-/// Caller is responsible for destroying the return value
-char* rule_json(rule_t* self);
-
 /// Evaluate rule
 void rule_evaluate(rule_t* self, zlist_t* params, const char* iname, const char* ename, int* result, char** message);
 
+/// ZZZ Returns 1 if ok
 int rule_compile(rule_t* self);
+

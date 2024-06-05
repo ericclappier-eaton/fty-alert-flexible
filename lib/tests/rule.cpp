@@ -1,14 +1,18 @@
 #include "src/rule.h"
 #include <catch2/catch.hpp>
+#include <fty_log.h>
 
 void rule_test_json(const char* dir, const char* basename)
 {
+    log_debug("** rule_test_json(): dir=%s, basename=%s", dir, basename);
+
     CHECK(dir);
     CHECK(basename);
 
     rule_t* self = rule_new();
     REQUIRE(self);
 
+    // load rule file
     {
         char* rule_file = zsys_sprintf("%s/%s.rule", dir, basename);
         REQUIRE(rule_file);
@@ -17,42 +21,25 @@ void rule_test_json(const char* dir, const char* basename)
         zstr_free(&rule_file);
     }
 
-    char* json = nullptr;
-    {
-        // read json related file
-        char* stock_json = nullptr;
-        {
-            const size_t MAX_SIZE  = 4096;
-            char*        json_file = zsys_sprintf("%s/%s.json", dir, basename);
-            REQUIRE(json_file);
-            FILE* f = fopen(json_file, "r");
-            REQUIRE(f);
-            stock_json = reinterpret_cast<char*>(calloc(1, MAX_SIZE + 1));
-            REQUIRE(stock_json);
-            REQUIRE(fread(stock_json, 1, MAX_SIZE, f));
-            fclose(f);
-            zstr_free(&json_file);
-        }
-
-        // test rule to json
-        json = rule_json(self);
-        REQUIRE(json);
-        // XXX: This is fragile, as we require the json to be bit-identical.
-        // If you get an error here, manually review the actual difference.
-        // In particular, the hash order is not stable
-        REQUIRE(streq(json, stock_json));
-        zstr_free(&stock_json);
-    }
+    // rule serialize
+    char* json = rule_serialize(self);
     REQUIRE(json);
 
+    // rule parse from previously serialized
     rule_t* rule = rule_new();
     REQUIRE(rule);
-    rule_parse(rule, json);
-    char* json2 = rule_json(rule);
+    int r = rule_parse(rule, json);
+    REQUIRE(r == 0);
+    char* json2 = rule_serialize(rule);
     REQUIRE(json2);
 
     CHECK(streq(rule_name(rule), rule_name(self)));
-    CHECK(streq(json, json2));
+
+    if (!streq(json, json2)) {
+        log_debug("== json:\n%s", json);
+        log_debug("== json2:\n%s", json2);
+    }
+    REQUIRE(streq(json, json2));
 
     zstr_free(&json);
     zstr_free(&json2);
@@ -65,6 +52,8 @@ void rule_test_json(const char* dir, const char* basename)
 
 void rule_test_lua(const char* dir, const char* basename)
 {
+    log_debug("** rule_test_lua(): dir=%s, basename=%s", dir, basename);
+
     CHECK(dir);
     CHECK(basename);
 
@@ -135,14 +124,14 @@ TEST_CASE("rule test")
         zhashx_insert(expected, "low_critical", const_cast<char*>("5"));
 
         //  compare it against loaded 'variables'
-        const char* item = reinterpret_cast<const char*>(zhashx_first(self->variables));
-        while (item) {
+        const char* value = reinterpret_cast<const char*>(zhashx_first(self->variables));
+        while (value) {
             const char* key            = reinterpret_cast<const char*>(zhashx_cursor(self->variables));
             const char* expected_value = reinterpret_cast<const char*>(zhashx_lookup(expected, key));
             CHECK(expected_value);
-            CHECK(streq(item, expected_value));
+            CHECK(streq(value, expected_value));
             zhashx_delete(expected, key);
-            item = reinterpret_cast<const char*>(zhashx_next(self->variables));
+            value = reinterpret_cast<const char*>(zhashx_next(self->variables));
         }
         CHECK(zhashx_size(expected) == 0);
         zhashx_destroy(&expected);
@@ -160,11 +149,16 @@ TEST_CASE("rule test")
         rule_test_json(SELFTEST_DIR_RULES, "old");
     }
 
-    //  Load test #5 - lua compile
+    //  Load test #5 - parse & lua compile
     {
-        const char* rules[] = {// .rule files with valid 'evaluation' part
+        // .rule files with valid 'evaluation' part
+        const char* rules[] = {
 
-            "sts-frequency", "sts-preferred-source", "sts-voltage", "threshold", "ups",
+            "sts-frequency",
+            "sts-preferred-source",
+            "sts-voltage",
+            "threshold",
+            "ups",
 
             //
             // public flexible templates
@@ -176,14 +170,21 @@ TEST_CASE("rule test")
             "templates/fire-detector.state-change@__device_sensorgpio__",
             "templates/licensing.expire@__device_rackcontroller__",
             "templates/pir-motion-detector.state-change@__device_sensorgpio__",
-            "templates/smoke-detector.state-change@__device_sensorgpio__", "templates/sts-frequency@__device_sts__",
-            "templates/sts-preferred-source@__device_sts__", "templates/sts-voltage@__device_sts__",
+            "templates/smoke-detector.state-change@__device_sensorgpio__",
+            "templates/sts-frequency@__device_sts__",
+            "templates/sts-preferred-source@__device_sts__",
+            "templates/sts-voltage@__device_sts__",
             "templates/vibration-sensor.state-change@__device_sensorgpio__",
             "templates/water-leak-detector.state-change@__device_sensorgpio__",
-            "templates/single-point-of-failure@__device_ups__", nullptr};
+            "templates/single-point-of-failure@__device_ups__",
+        };
 
-        for (int i = 0; rules[i]; i++) {
-            rule_test_lua(SELFTEST_DIR_RULES, rules[i]);
+        for (const auto& rule : rules) {
+            rule_test_json(SELFTEST_DIR_RULES, rule);
+        }
+
+        for (const auto& rule : rules) {
+            rule_test_lua(SELFTEST_DIR_RULES, rule);
         }
     }
 }

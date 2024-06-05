@@ -697,7 +697,7 @@ static zmsg_t* flexible_alert_list_rules(flexible_alert_t* self, const char* typ
 
     rule_t* rule = reinterpret_cast<rule_t*>(zhash_first(self->rules));
     while (rule) {
-        char* json = rule_json(rule);
+        char* json = rule_serialize(rule);
         if (json) {
             char* uistyle = NULL;
             asprintf(&uistyle, "{\"flexible\": %s }", json);
@@ -993,7 +993,7 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
     while (rule) {
         if (match(rule)) {
             bool addOk{false};
-            char* json = rule_json(rule);
+            char* json = rule_serialize(rule);
             if (json) {
                 char* flexJson = NULL;
                 asprintf(&flexJson, "{\"flexible\": %s}", json);
@@ -1026,7 +1026,7 @@ static zmsg_t* flexible_alert_get_rule(flexible_alert_t* self, char* name)
     rule_t* rule  = reinterpret_cast<rule_t*>(zhash_lookup(self->rules, name));
     zmsg_t* reply = zmsg_new();
     if (rule) {
-        char* json = rule_json(rule);
+        char* json = rule_serialize(rule);
         zmsg_addstr(reply, "OK");
         zmsg_addstr(reply, json);
         zstr_free(&json);
@@ -1371,7 +1371,7 @@ void flexible_alert_actor(zsock_t* pipe, void* args)
                     // request: ADD/rulejson/rulename -- this is replace
                     // reply: OK/rulejson
                     // reply: ERROR/reason
-                    log_info("%s %s %s (incomplete: %s)", cmd, p1, p2, (incomplete ? "true" : "false"));
+                    log_info("cmd=%s, p1=%s, p2=%s (incomplete: %s)", cmd, p1, p2, (incomplete ? "true" : "false"));
                     reply = flexible_alert_add_rule(self, p1, p2, incomplete, ruledir);
                 }
                 else if (streq(cmd, "DELETE")) {

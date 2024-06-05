@@ -11,8 +11,6 @@ etn_target(static ${PROJECT_NAME}-lib
         audit_log.h
         rule.cc
         rule.h
-        vsjson.cc
-        vsjson.h
         asset_info.cc
         asset_info.h
     USES_PRIVATE
@@ -33,9 +31,9 @@ etn_test_target(${PROJECT_NAME}-lib
     CONFIGS
         tests/selftest-ro/*
     SOURCES
-        tests/flexible_alert.cpp
         tests/main.cpp
         tests/rule.cpp
+        tests/flexible_alert.cpp
     PREPROCESSOR
         -DCATCH_CONFIG_FAST_COMPILE
     SUBDIR
