@@ -33,7 +33,21 @@
 #include <string>
 #include <map>
 
-//  Structure of our class
+struct _rule_t
+{
+    char*      name;
+    char*      description;
+    char*      logical_asset;
+    zlist_t*   metrics;
+    zlist_t*   assets;
+    zlist_t*   groups;
+    zlist_t*   models;
+    zlist_t*   types;
+    zhash_t*   result_actions;
+    zhashx_t*  variables; /// lua context global variables
+    char*      evaluation;
+    lua_State* lua;
+};
 
 static int string_comparefn(void* i1, void* i2)
 {
@@ -528,10 +542,10 @@ zlist_t* rule_result_actions(rule_t* self, int result)
 }
 
 //  --------------------------------------------------------------------------
-//  Get global variables
+//  Get rule variables (globals)
 //  Caller is responsible for destroying the return value
 
-zhashx_t* rule_global_variables(rule_t* self)
+zhashx_t* rule_variables(rule_t* self)
 {
     assert(self);
     return zhashx_dup(self->variables);

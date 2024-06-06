@@ -26,21 +26,8 @@
 
 #define RULE_ERROR 255
 
-struct rule_t
-{
-    char*      name;
-    char*      description;
-    char*      logical_asset;
-    zlist_t*   metrics;
-    zlist_t*   assets;
-    zlist_t*   groups;
-    zlist_t*   models;
-    zlist_t*   types;
-    zhash_t*   result_actions;
-    zhashx_t*  variables; /// lua context global variables
-    char*      evaluation;
-    lua_State* lua;
-};
+/// opacified structure
+typedef struct _rule_t rule_t;
 
 /// Create a new rule
 rule_t* rule_new(void);
@@ -85,9 +72,9 @@ bool rule_type_exists(rule_t* self, const char* type);
 /// Get rule actions
 zlist_t* rule_result_actions(rule_t* self, int result);
 
-/// Get global variables
+/// Get rule variables (globals)
 /// Caller is responsible for destroying the return value
-zhashx_t* rule_global_variables(rule_t* self);
+zhashx_t* rule_variables(rule_t* self);
 
 /// Load json rule from file
 int rule_load(rule_t* self, const char* path);

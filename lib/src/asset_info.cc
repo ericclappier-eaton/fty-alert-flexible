@@ -21,6 +21,11 @@
 #include <fty_log.h>
 #include <czmq.h>
 
+struct _asset_info_t
+{
+    zlist_t* locations;
+};
+
 // zlist_t compare locations items (char*)
 // for zlist_exits() usage
 static int locations_cmp_fn(void *item1, void *item2)
@@ -29,11 +34,6 @@ static int locations_cmp_fn(void *item1, void *item2)
     char* s2 = static_cast<char*>(item2);
     return strcmp(s1, s2);
 }
-
-struct _asset_info_t
-{
-    zlist_t* locations;
-};
 
 asset_info_t* asset_info_new(fty_proto_t* asset)
 {

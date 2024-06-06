@@ -97,7 +97,8 @@ TEST_CASE("rule test")
         REQUIRE(self);
         char* rule_file = zsys_sprintf("%s/%s", SELFTEST_DIR_RULES, "load.rule");
         REQUIRE(rule_file);
-        rule_load(self, rule_file);
+        int r = rule_load(self, rule_file);
+        CHECK(r == 0);
         zstr_free(&rule_file);
         rule_destroy(&self);
         CHECK(self == nullptr);
@@ -109,30 +110,35 @@ TEST_CASE("rule test")
         REQUIRE(self);
         char* rule_file = zsys_sprintf("%s/%s", SELFTEST_DIR_RULES, "threshold.rule");
         REQUIRE(rule_file);
-        rule_load(self, rule_file);
+        int r = rule_load(self, rule_file);
+        CHECK(r == 0);
         zstr_free(&rule_file);
 
         //  prepare expected 'variables' hash
         zhashx_t* expected = zhashx_new();
         REQUIRE(expected);
-        zhashx_set_duplicator(self->variables, reinterpret_cast<zhashx_duplicator_fn*>(strdup));
-        zhashx_set_destructor(self->variables, reinterpret_cast<zhashx_destructor_fn*>(zstr_free));
+        zhashx_set_duplicator(expected, reinterpret_cast<zhashx_duplicator_fn*>(strdup));
+        zhashx_set_destructor(expected, reinterpret_cast<zhashx_destructor_fn*>(zstr_free));
 
         zhashx_insert(expected, "high_critical", const_cast<char*>("60"));
         zhashx_insert(expected, "high_warning", const_cast<char*>("40"));
         zhashx_insert(expected, "low_warning", const_cast<char*>("15"));
         zhashx_insert(expected, "low_critical", const_cast<char*>("5"));
 
-        //  compare it against loaded 'variables'
-        const char* value = reinterpret_cast<const char*>(zhashx_first(self->variables));
+        // compare it against self 'variables'
+        zhashx_t* variables = rule_variables(self);
+        REQUIRE(variables);
+        const char* value = reinterpret_cast<const char*>(zhashx_first(variables));
         while (value) {
-            const char* key            = reinterpret_cast<const char*>(zhashx_cursor(self->variables));
+            const char* key            = reinterpret_cast<const char*>(zhashx_cursor(variables));
             const char* expected_value = reinterpret_cast<const char*>(zhashx_lookup(expected, key));
             CHECK(expected_value);
             CHECK(streq(value, expected_value));
             zhashx_delete(expected, key);
-            value = reinterpret_cast<const char*>(zhashx_next(self->variables));
+            value = reinterpret_cast<const char*>(zhashx_next(variables));
         }
+        zhashx_destroy(&variables);
+
         CHECK(zhashx_size(expected) == 0);
         zhashx_destroy(&expected);
         rule_destroy(&self);
@@ -162,7 +168,7 @@ TEST_CASE("rule test")
 
             //
             // public flexible templates
-            // copied from 42ity/fty-alert-engine/src/rule_templtes
+            // copied from 42ity/fty-alert-engine/lib/rule_templates
             //
 
             "templates/door-contact.state-change@__device_sensorgpio__",
