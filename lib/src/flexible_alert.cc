@@ -220,8 +220,8 @@ static void flexible_alert_load_rules(flexible_alert_t* self, const char* path)
         log_trace("checking dir entry %s type %i", entry->d_name, entry->d_type);
         if (entry->d_type == DT_LNK || entry->d_type == DT_REG || entry->d_type == 0) {
             // file or link
-            int l = int(strlen(entry->d_name));
-            if (l > 5 && streq(&(entry->d_name[l - 5]), ".rule")) {
+            size_t l = strlen(entry->d_name);
+            if ((l > 5) && streq(&(entry->d_name[l - 5]), ".rule")) {
                 // .rule file (json payload)
                 char* fullpath = NULL;
                 asprintf(&fullpath, "%s/%s", path, entry->d_name);
@@ -237,38 +237,44 @@ static void flexible_alert_send_alert(
     flexible_alert_t* self, rule_t* rule, const char* asset, int result, const char* message, int ttl)
 {
     const char* severity = "OK";
-    if (result == -1 || result == 1)
+    if (result == -1 || result == 1) {
         severity = "WARNING";
-    if (result == -2 || result == 2)
+    }
+    if (result == -2 || result == 2) {
         severity = "CRITICAL";
+    }
 
     // topic
     char* topic = NULL;
     asprintf(&topic, "%s/%s@%s", rule_name(rule), severity, asset);
 
     // Logical asset if specified
-    const char* la = rule_logical_asset(rule);
-    if (la != NULL && !streq(la, "")) {
-        asset = la;
+    const char* logical_asset = rule_logical_asset(rule);
+    if (logical_asset && (*logical_asset)) {
+        asset = logical_asset; // logical asset defined
     }
 
     // message
     zmsg_t* alert = fty_proto_encode_alert(NULL, uint64_t(time(nullptr)), uint32_t(ttl), rule_name(rule), asset,
-        result == 0 ? "RESOLVED" : "ACTIVE", severity, message, rule_result_actions(rule, result)); // action list
+        (result == 0) ? "RESOLVED" : "ACTIVE", severity, message, rule_result_actions(rule, result)); // action list
 
     if (streq(severity, "OK")) {
         log_debug(ANSI_COLOR_BOLD "flexible_alert_send_alert %s, asset: %s: severity: %s (result: %d)" ANSI_COLOR_RESET,
             rule_name(rule), asset, severity, result);
-    } else {
+    }
+    else {
         log_info(ANSI_COLOR_YELLOW
             "flexible_alert_send_alert %s, asset: %s: severity: %s (result: %d)" ANSI_COLOR_RESET,
             rule_name(rule), asset, severity, result);
     }
 
-    mlm_client_send(self->mlm, topic, &alert);
+    int r = mlm_client_send(self->mlm, topic, &alert);
+    if (r != 0) {
+        log_error("mlm_client_send() failed (topic: %s)", topic);
+    }
 
-    zstr_free(&topic);
     zmsg_destroy(&alert);
+    zstr_free(&topic);
 }
 
 static std::string auditValue(const std::string& param, const char* value)
@@ -281,11 +287,11 @@ static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const 
     zlist_t* params = zlist_new();
     zlist_autofree(params);
 
-    bool                     isMetricMissing = false;
+    bool isMetricMissing = false;
     std::string auditValues;
 
     // prepare lua function parameters
-    int         ttl   = 0;
+    int min_ttl = 0;
     const char* param = rule_metric_first(rule);
     while (param) {
         char* topic = NULL;
@@ -304,8 +310,9 @@ static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const 
         zstr_free(&topic);
 
         // TTL should be set accorning shortest ttl in metric
-        if (ttl == 0 || ttl > int(fty_proto_ttl(ftymsg)))
-            ttl = int(fty_proto_ttl(ftymsg));
+        if (min_ttl == 0 || min_ttl > int(fty_proto_ttl(ftymsg))) {
+            min_ttl = int(fty_proto_ttl(ftymsg));
+        }
         const char* value = fty_proto_value(ftymsg);
         zlist_append(params, const_cast<char*>(value));
 
@@ -314,7 +321,7 @@ static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const 
         param = rule_metric_next(rule);
     }
 
-    int   result  = 0;
+    int result = 0;
 
     // if no metric is missing
     if (!isMetricMissing) {
@@ -327,8 +334,9 @@ static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const 
             rule_name(rule), assetname, result);
 
         if (result != RULE_ERROR) {
-            flexible_alert_send_alert(self, rule, assetname, result, message, ttl * 5 / 2);
-        } else {
+            flexible_alert_send_alert(self, rule, assetname, result, message, (min_ttl * 5) / 2);
+        }
+        else {
             log_error(ANSI_COLOR_RED "error evaluating rule %s" ANSI_COLOR_RESET, rule_name(rule));
         }
         zstr_free(&message);
@@ -697,7 +705,7 @@ static zmsg_t* flexible_alert_list_rules(flexible_alert_t* self, const char* typ
 
     rule_t* rule = reinterpret_cast<rule_t*>(zhash_first(self->rules));
     while (rule) {
-        char* json = rule_json(rule);
+        char* json = rule_serialize(rule);
         if (json) {
             char* uistyle = NULL;
             asprintf(&uistyle, "{\"flexible\": %s }", json);
@@ -993,7 +1001,7 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
     while (rule) {
         if (match(rule)) {
             bool addOk{false};
-            char* json = rule_json(rule);
+            char* json = rule_serialize(rule);
             if (json) {
                 char* flexJson = NULL;
                 asprintf(&flexJson, "{\"flexible\": %s}", json);
@@ -1026,7 +1034,7 @@ static zmsg_t* flexible_alert_get_rule(flexible_alert_t* self, char* name)
     rule_t* rule  = reinterpret_cast<rule_t*>(zhash_lookup(self->rules, name));
     zmsg_t* reply = zmsg_new();
     if (rule) {
-        char* json = rule_json(rule);
+        char* json = rule_serialize(rule);
         zmsg_addstr(reply, "OK");
         zmsg_addstr(reply, json);
         zstr_free(&json);
@@ -1371,7 +1379,7 @@ void flexible_alert_actor(zsock_t* pipe, void* args)
                     // request: ADD/rulejson/rulename -- this is replace
                     // reply: OK/rulejson
                     // reply: ERROR/reason
-                    log_info("%s %s %s (incomplete: %s)", cmd, p1, p2, (incomplete ? "true" : "false"));
+                    log_info("cmd=%s, p1=%s, p2=%s (incomplete: %s)", cmd, p1, p2, (incomplete ? "true" : "false"));
                     reply = flexible_alert_add_rule(self, p1, p2, incomplete, ruledir);
                 }
                 else if (streq(cmd, "DELETE")) {
