@@ -49,7 +49,7 @@ struct _rule_t
     lua_State* lua;
 };
 
-static int string_comparefn(void* i1, void* i2)
+static int strcmp_fn(void* i1, void* i2)
 {
     return strcmp(reinterpret_cast<char*>(i1), reinterpret_cast<char*>(i2));
 }
@@ -60,29 +60,31 @@ static int string_comparefn(void* i1, void* i2)
 rule_t* rule_new()
 {
     rule_t* self = reinterpret_cast<rule_t*>(zmalloc(sizeof(rule_t)));
-    assert(self);
+    if (!self) {
+        return NULL;
+    }
     memset(self, 0, sizeof(*self));
 
     //  Initialize class properties here
     self->metrics = zlist_new();
     zlist_autofree(self->metrics);
-    zlist_comparefn(self->metrics, string_comparefn);
+    zlist_comparefn(self->metrics, strcmp_fn);
 
     self->assets = zlist_new();
     zlist_autofree(self->assets);
-    zlist_comparefn(self->assets, string_comparefn);
+    zlist_comparefn(self->assets, strcmp_fn);
 
     self->groups = zlist_new();
     zlist_autofree(self->groups);
-    zlist_comparefn(self->groups, string_comparefn);
+    zlist_comparefn(self->groups, strcmp_fn);
 
     self->models = zlist_new();
     zlist_autofree(self->models);
-    zlist_comparefn(self->models, string_comparefn);
+    zlist_comparefn(self->models, strcmp_fn);
 
     self->types = zlist_new();
     zlist_autofree(self->types);
-    zlist_comparefn(self->types, string_comparefn);
+    zlist_comparefn(self->types, strcmp_fn);
 
     self->result_actions = zhash_new();
 
@@ -95,11 +97,13 @@ rule_t* rule_new()
 }
 
 //  --------------------------------------------------------------------------
-//  zhash_free_fn callback for result_actions list
-static void free_action(void* data)
+//  zhash_freefn callback for result_actions list
+static void zlist_freefn(void* p)
 {
-    zlist_t* list = reinterpret_cast<zlist_t*>(data);
-    zlist_destroy(&list);
+    if (p) {
+        zlist_t* list = reinterpret_cast<zlist_t*>(p);
+        zlist_destroy(&list);
+    }
 }
 
 //  --------------------------------------------------------------------------
@@ -114,7 +118,7 @@ void rule_add_result_action(rule_t* self, const char* result, const char* action
         list = zlist_new();
         zlist_autofree(list);
         zhash_insert(self->result_actions, result, list);
-        zhash_freefn(self->result_actions, result, free_action);
+        zhash_freefn(self->result_actions, result, zlist_freefn);
     }
     if (action) {
         zlist_append(list, const_cast<char*>(action));
@@ -122,7 +126,7 @@ void rule_add_result_action(rule_t* self, const char* result, const char* action
 }
 
 //  Parse rule from JSON.
-// Returns 0 if ok, else failed
+//  Returns 0 if ok, else failed
 int rule_parse(rule_t* self, const char* json)
 {
     if (!self) {
@@ -419,8 +423,14 @@ char* rule_serialize(rule_t* self)
 
 const char* rule_name(rule_t* self)
 {
-    assert(self);
-    return self->name;
+    return self ? self->name : NULL;
+}
+
+const char* rule_asset(rule_t* self)
+{
+    // asset from name
+    const char* p = (self && self->name) ? strchr(self->name, '@') : NULL;
+    return p ? (p + 1) : NULL;
 }
 
 //  --------------------------------------------------------------------------
@@ -428,8 +438,7 @@ const char* rule_name(rule_t* self)
 
 const char* rule_logical_asset(rule_t* self)
 {
-    assert(self);
-    return self->logical_asset;
+    return self ? self->logical_asset : NULL;
 }
 
 //  --------------------------------------------------------------------------
@@ -437,10 +446,7 @@ const char* rule_logical_asset(rule_t* self)
 
 bool rule_asset_exists(rule_t* self, const char* asset)
 {
-    assert(self);
-    assert(asset);
-
-    return zlist_exists(self->assets, const_cast<char*>(asset));
+    return self && asset && zlist_exists(self->assets, const_cast<char*>(asset));
 }
 
 //  --------------------------------------------------------------------------
@@ -448,10 +454,7 @@ bool rule_asset_exists(rule_t* self, const char* asset)
 
 bool rule_group_exists(rule_t* self, const char* group)
 {
-    assert(self);
-    assert(group);
-
-    return zlist_exists(self->groups, const_cast<char*>(group));
+    return self && group && zlist_exists(self->groups, const_cast<char*>(group));
 }
 
 
@@ -460,10 +463,7 @@ bool rule_group_exists(rule_t* self, const char* group)
 
 bool rule_metric_exists(rule_t* self, const char* metric)
 {
-    assert(self);
-    assert(metric);
-
-    return zlist_exists(self->metrics, const_cast<char*>(metric));
+    return self && metric && zlist_exists(self->metrics, const_cast<char*>(metric));
 }
 
 //  --------------------------------------------------------------------------
@@ -471,8 +471,7 @@ bool rule_metric_exists(rule_t* self, const char* metric)
 
 const char* rule_metric_first(rule_t* self)
 {
-    assert(self);
-    return reinterpret_cast<const char*>(zlist_first(self->metrics));
+    return reinterpret_cast<const char*>(self ? zlist_first(self->metrics) : NULL);
 }
 
 //  --------------------------------------------------------------------------
@@ -480,8 +479,7 @@ const char* rule_metric_first(rule_t* self)
 
 const char* rule_metric_next(rule_t* self)
 {
-    assert(self);
-    return reinterpret_cast<const char*>(zlist_next(self->metrics));
+    return reinterpret_cast<const char*>(self ? zlist_next(self->metrics) : NULL);
 }
 
 //  --------------------------------------------------------------------------
@@ -489,10 +487,7 @@ const char* rule_metric_next(rule_t* self)
 
 bool rule_model_exists(rule_t* self, const char* model)
 {
-    assert(self);
-    assert(model);
-
-    return zlist_exists(self->models, const_cast<char*>(model));
+    return self && model && zlist_exists(self->models, const_cast<char*>(model));
 }
 
 
@@ -501,10 +496,7 @@ bool rule_model_exists(rule_t* self, const char* model)
 
 bool rule_type_exists(rule_t* self, const char* type)
 {
-    assert(self);
-    assert(type);
-
-    return zlist_exists(self->types, const_cast<char*>(type));
+    return self && type && zlist_exists(self->types, const_cast<char*>(type));
 }
 
 //  --------------------------------------------------------------------------
@@ -515,7 +507,7 @@ zlist_t* rule_result_actions(rule_t* self, int result)
     zlist_t* list = nullptr;
 
     if (self) {
-        const char* results;
+        const char* results = "";
         switch (result) {
             case -2:
                 results = "low_critical";
@@ -532,9 +524,7 @@ zlist_t* rule_result_actions(rule_t* self, int result)
             case 2:
                 results = "high_critical";
                 break;
-            default:
-                results = "";
-                break;
+            default:;
         }
         list = reinterpret_cast<zlist_t*>(zhash_lookup(self->result_actions, results));
     }
@@ -547,13 +537,12 @@ zlist_t* rule_result_actions(rule_t* self, int result)
 
 zhashx_t* rule_variables(rule_t* self)
 {
-    assert(self);
-    return zhashx_dup(self->variables);
+    return self ? zhashx_dup(self->variables) : NULL;
 }
 
 //  --------------------------------------------------------------------------
 //  Load json rule from file
-
+//  Returns 0 if ok
 int rule_load(rule_t* self, const char* path)
 {
     int fd = open(path, O_RDONLY);
@@ -606,7 +595,7 @@ void rule_merge(rule_t* old_rule, rule_t* new_rule)
 
 //  --------------------------------------------------------------------------
 //  Save json rule to file
-
+//  Returns 0 if ok
 int rule_save(rule_t* self, const char* path)
 {
     int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
@@ -633,8 +622,9 @@ int rule_save(rule_t* self, const char* path)
 // ZZZ return 1 if ok, else 0
 int rule_compile(rule_t* self)
 {
-    if (!self)
+    if (!self) {
         return 0;
+    }
 
     // destroy old context
     if (self->lua) {
@@ -696,10 +686,12 @@ int rule_compile(rule_t* self)
 
 void rule_evaluate(rule_t* self, zlist_t* params, const char* iname, const char* ename, int* result, char** message)
 {
-    if (result)
+    if (result) {
         *result = RULE_ERROR;
-    if (message)
+    }
+    if (message) {
         *message = nullptr;
+    }
 
     if (!self || !params || !iname || !result || !message) {
         log_error("bad args");
@@ -723,7 +715,7 @@ void rule_evaluate(rule_t* self, zlist_t* params, const char* iname, const char*
     lua_getglobal(self->lua, "main");
 
     char* value = reinterpret_cast<char*>(zlist_first(params));
-    int   i     = 0;
+    int i = 0;
     while (value) {
         log_trace("rule_evaluate: push param #%d: %s", i, value);
         lua_pushstring(self->lua, value);
@@ -736,21 +728,26 @@ void rule_evaluate(rule_t* self, zlist_t* params, const char* iname, const char*
     if (r == 0) {
         // calculated
         if (lua_isnumber(self->lua, -1)) {
-            *result         = int(lua_tointeger(self->lua, -1));
+            *result = int(lua_tointeger(self->lua, -1));
             const char* msg = lua_tostring(self->lua, -2);
-            if (msg)
+            if (msg) {
                 *message = strdup(msg);
-        } else if (lua_isnumber(self->lua, -2)) {
-            *result         = int(lua_tointeger(self->lua, -2));
+            }
+        }
+        else if (lua_isnumber(self->lua, -2)) {
+            *result = int(lua_tointeger(self->lua, -2));
             const char* msg = lua_tostring(self->lua, -1);
-            if (msg)
+            if (msg) {
                 *message = strdup(msg);
-        } else {
+            }
+        }
+        else {
             log_error("rule_evaluate: invalid content of self->lua.");
         }
 
         lua_pop(self->lua, 2);
-    } else {
+    }
+    else {
         log_error("rule_evaluate: lua_pcall %s failed (r: %d)", rule_name(self), r);
     }
 }
@@ -762,13 +759,14 @@ void rule_destroy(rule_t** self_p)
 {
     if (self_p && (*self_p)) {
         rule_t* self = *self_p;
-        //  Free class properties here
+
         zstr_free(&self->name);
         zstr_free(&self->description);
         zstr_free(&self->logical_asset);
         zstr_free(&self->evaluation);
-        if (self->lua)
+        if (self->lua) {
             lua_close(self->lua);
+        }
         zlist_destroy(&self->metrics);
         zlist_destroy(&self->assets);
         zlist_destroy(&self->groups);
@@ -776,7 +774,7 @@ void rule_destroy(rule_t** self_p)
         zlist_destroy(&self->types);
         zhash_destroy(&self->result_actions);
         zhashx_destroy(&self->variables);
-        //  Free object itself
+
         free(self);
         *self_p = nullptr;
     }

@@ -45,6 +45,9 @@ char* rule_serialize(rule_t* self);
 /// Get rule name
 const char* rule_name(rule_t* self);
 
+/// Get rule asset from rule name
+const char* rule_asset(rule_t* self);
+
 /// Get the logical asset
 const char* rule_logical_asset(rule_t* self);
 

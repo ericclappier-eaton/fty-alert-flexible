@@ -153,7 +153,7 @@ int main (int argc, char *argv [])
     zlist_append(server_args, const_cast<char*>(assets_pattern));
     zlist_append(server_args, const_cast<char*>(metrics_pattern));
 
-    zactor_t *server = zactor_new(flexible_alert_actor, server_args);
+    zactor_t *server = zactor_new(fty_flexible_alert_actor, server_args);
     if (!server) {
         zlist_destroy(&server_args);
         log_fatal("%s - Failed to create main actor", ACTOR_NAME);
@@ -161,7 +161,7 @@ int main (int argc, char *argv [])
     }
 
     // server config
-    zstr_sendx(server, "BIND", endpoint, ACTOR_NAME, NULL);
+    zstr_sendx(server, "CONNECT", endpoint, ACTOR_NAME, NULL);
     zstr_sendx(server, "PRODUCER", FTY_PROTO_STREAM_ALERTS_SYS, NULL);
     //zstr_sendx(server, "CONSUMER", FTY_PROTO_STREAM_METRICS, metrics_pattern, NULL);
     zstr_sendx(server, "CONSUMER", FTY_PROTO_STREAM_METRICS_SENSOR, "status.*", NULL);
