@@ -23,14 +23,13 @@
 #include "audit_log.h"
 #include "rule.h"
 #include "asset_info.h"
-#include <malamute.h>
 #include <fty_log.h>
 #include <fty_proto.h>
 #include <fty_shm.h>
-#include <sstream>
-
+#include <fty_common_json.h>
 #include <cxxtools/jsondeserializer.h>
-#include <fty_common.h>
+#include <malamute.h>
+#include <sstream>
 #include <regex>
 
 #define ANSI_COLOR_WHITE_ON_BLUE "\x1b[44;97m"
@@ -42,42 +41,35 @@
 
 // freefn() collection for zhash_t* item destructors
 
-static void rule_freefn(void* rule)
+static void rule_freefn(void* p)
 {
-    if (rule) {
-        rule_t* self = reinterpret_cast<rule_t*>(rule);
-        rule_destroy(&self);
+    if (p) {
+        rule_t* rule = reinterpret_cast<rule_t*>(p);
+        rule_destroy(&rule);
     }
 }
 
-static void asset_freefn(void* asset)
+static void zlist_freefn(void* p)
 {
-    if (asset) {
-        zlist_t* self = reinterpret_cast<zlist_t*>(asset);
-        zlist_destroy(&self);
+    if (p) {
+        zlist_t* list = reinterpret_cast<zlist_t*>(p);
+        zlist_destroy(&list);
     }
 }
 
-void ftymsg_freefn(void* ftymsg)
+void proto_freefn(void* p)
 {
-    if (ftymsg) {
-        fty_proto_t* fty = reinterpret_cast<fty_proto_t*>(ftymsg);
-        fty_proto_destroy(&fty);
+    if (p) {
+        fty_proto_t* proto = reinterpret_cast<fty_proto_t*>(p);
+        fty_proto_destroy(&proto);
     }
 }
 
-static void ename_freefn(void* ename)
+static void asset_info_freefn(void* p)
 {
-    if (ename) {
-        free(ename);
-    }
-}
-
-static void asset_info_freefn(void* assetInfo)
-{
-    if (assetInfo) {
-        asset_info_t* info = reinterpret_cast<asset_info_t*>(assetInfo);
-        asset_info_destroy(&info);
+    if (p) {
+        asset_info_t* asset_info = reinterpret_cast<asset_info_t*>(p);
+        asset_info_destroy(&asset_info);
     }
 }
 
@@ -95,15 +87,15 @@ struct flexible_alert_t
 //  --------------------------------------------------------------------------
 //  Create a new flexible_alert
 
-static flexible_alert_t* flexible_alert_new(void)
+static flexible_alert_t* flexible_alert_new()
 {
     flexible_alert_t* self = reinterpret_cast<flexible_alert_t*>(zmalloc(sizeof(flexible_alert_t)));
-    if (!self)
+    if (!self) {
         return NULL;
+    }
 
     memset(self, 0, sizeof(flexible_alert_t));
 
-    //  Initialize class properties here
     self->rules     = zhash_new();
     self->metrics   = zhash_new();
     self->assets    = zhash_new();
@@ -111,7 +103,7 @@ static flexible_alert_t* flexible_alert_new(void)
     self->assetInfo = zhash_new();
     self->mlm = mlm_client_new();
 
-    zhash_autofree(self->enames);
+    zhash_autofree(self->enames); // auto dup&free
 
     return self;
 }
@@ -121,11 +113,12 @@ static flexible_alert_t* flexible_alert_new(void)
 
 static void flexible_alert_destroy(flexible_alert_t** self_p)
 {
-    if (!(self_p && (*self_p)))
+    if (!(self_p && (*self_p))) {
         return;
+    }
 
     flexible_alert_t* self = *self_p;
-    //  Free class properties here
+
     zhash_destroy(&self->rules);
     zhash_destroy(&self->metrics);
     zhash_destroy(&self->assets);
@@ -133,7 +126,6 @@ static void flexible_alert_destroy(flexible_alert_t** self_p)
     zhash_destroy(&self->assetInfo);
     mlm_client_destroy(&self->mlm);
 
-    //  Free object itself
     free(self);
     *self_p = NULL;
 }
@@ -141,10 +133,11 @@ static void flexible_alert_destroy(flexible_alert_t** self_p)
 //  --------------------------------------------------------------------------
 //  Ask the asset agent to republish assets informations
 
-static void s_republish_asset(flexible_alert_t* self, const std::vector<std::string>& assets)
+static void republish_asset(flexible_alert_t* self, const std::vector<std::string>& assets)
 {
-    if (!(self && self->mlm))
+    if (!(self && self->mlm)) {
         return;
+    }
 
     zmsg_t* msg = zmsg_new();
 
@@ -176,43 +169,45 @@ static void s_republish_asset(flexible_alert_t* self, const std::vector<std::str
 //  Load one rule from path. Returns valid rule_t* on success, else NULL.
 //  CAUTION: returned rule_t* is referenced in self->rules
 
-static rule_t* flexible_alert_load_one_rule(flexible_alert_t* self, const char* fullpath)
+static rule_t* load_rule(flexible_alert_t* self, const char* fullpath)
 {
     rule_t* rule = rule_new();
     int r = rule_load(rule, fullpath);
-    if (r == 0) {
-        log_info("rule %s loaded", fullpath);
-        zhash_update(self->rules, rule_name(rule), rule);
-        zhash_freefn(self->rules, rule_name(rule), rule_freefn);
-
-        // update our lists with asset referenced by rule
-        const char* asset = strstr(rule_name(rule), "@");
-        if (asset) {
-            s_republish_asset(self, {asset + 1});
-        }
-
-        return rule;
+    if (r != 0) {
+        log_error("failed to load rule '%s' (r: %d)", fullpath, r);
+        rule_destroy(&rule);
+        return NULL;
     }
 
-    log_error("failed to load rule '%s' (r: %d)", fullpath, r);
-    rule_destroy(&rule);
-    return NULL;
+    log_info("rule %s loaded", fullpath);
+
+    zhash_update(self->rules, rule_name(rule), rule);
+    zhash_freefn(self->rules, rule_name(rule), rule_freefn);
+
+    // update our lists with asset referenced by rule
+    const char* assetname = rule_asset(rule);
+    if (assetname) {
+        republish_asset(self, {assetname});
+    }
+
+    return rule;
 }
 
 //  --------------------------------------------------------------------------
 //  Load all rules in directory. Rule MUST have ".rule" extension.
-
-static void flexible_alert_load_rules(flexible_alert_t* self, const char* path)
+//  Returns 0 if ok
+static int load_rules(flexible_alert_t* self, const char* path)
 {
-    if (!self || !path)
-        return;
+    if (!(self && path)) {
+        return -1;
+    }
 
     log_info("reading rules from dir '%s'", path);
 
     DIR* dir = opendir(path);
     if (!dir) {
         log_error("cannot open dir '%s' (%s)", path, strerror(errno));
-        return;
+        return -2;
     }
 
     struct dirent* entry;
@@ -225,24 +220,40 @@ static void flexible_alert_load_rules(flexible_alert_t* self, const char* path)
                 // .rule file (json payload)
                 char* fullpath = NULL;
                 asprintf(&fullpath, "%s/%s", path, entry->d_name);
-                flexible_alert_load_one_rule(self, fullpath);
+                load_rule(self, fullpath);
                 zstr_free(&fullpath);
             }
         }
     }
     closedir(dir);
+    return 0; //ok
 }
 
-static void flexible_alert_send_alert(
-    flexible_alert_t* self, rule_t* rule, const char* asset, int result, const char* message, int ttl)
+//  --------------------------------------------------------------------------
+//  cleanup metrics cache
+
+static void cleanup_expired_metrics(flexible_alert_t* self)
 {
-    const char* severity = "OK";
-    if (result == -1 || result == 1) {
-        severity = "WARNING";
+    uint64_t now = uint64_t(time(NULL));
+
+    zlist_t* topics = zhash_keys(self->metrics);
+    for (void* p = zlist_first(topics); p; p = zlist_next(topics)) {
+        const char* topic = reinterpret_cast<const char*>(p);
+        fty_proto_t* proto = reinterpret_cast<fty_proto_t*>(zhash_lookup(self->metrics, topic));
+        if (!proto || ((fty_proto_time(proto) + fty_proto_ttl(proto)) < now)) {
+            log_debug("delete metric %s", topic);
+            zhash_delete(self->metrics, topic);
+        }
     }
-    if (result == -2 || result == 2) {
-        severity = "CRITICAL";
-    }
+    zlist_destroy(&topics);
+}
+
+static void send_alert(flexible_alert_t* self, rule_t* rule, const char* asset, int result, const char* message, int ttl)
+{
+    const char* severity =
+        (result == -1 || result == 1) ? "WARNING"  :
+        (result == -2 || result == 2) ? "CRITICAL" :
+        "OK";
 
     // topic
     char* topic = NULL;
@@ -259,13 +270,10 @@ static void flexible_alert_send_alert(
         (result == 0) ? "RESOLVED" : "ACTIVE", severity, message, rule_result_actions(rule, result)); // action list
 
     if (streq(severity, "OK")) {
-        log_debug(ANSI_COLOR_BOLD "flexible_alert_send_alert %s, asset: %s: severity: %s (result: %d)" ANSI_COLOR_RESET,
-            rule_name(rule), asset, severity, result);
+        log_debug(ANSI_COLOR_BOLD "send_alert %s, asset: %s (result: %d)" ANSI_COLOR_RESET, topic, asset, result);
     }
     else {
-        log_info(ANSI_COLOR_YELLOW
-            "flexible_alert_send_alert %s, asset: %s: severity: %s (result: %d)" ANSI_COLOR_RESET,
-            rule_name(rule), asset, severity, result);
+        log_info(ANSI_COLOR_YELLOW "send_alert %s, asset: %s (result: %d)" ANSI_COLOR_RESET, topic, asset, result);
     }
 
     int r = mlm_client_send(self->mlm, topic, &alert);
@@ -277,13 +285,35 @@ static void flexible_alert_send_alert(
     zstr_free(&topic);
 }
 
+// --------------------------------------------------------------------------
+// returns true if metric belongs to gpi sensor
+static bool is_metric_gpi(fty_proto_t* metric)
+{
+    if (metric) {
+        const char* ext_port = fty_proto_aux_string(metric, "ext-port", NULL);
+        if (ext_port) {
+            return true;
+        }
+        const char* port = fty_proto_aux_string(metric, FTY_PROTO_METRICS_AUX_PORT, "");
+        if (strstr(port, "GPI")) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static std::string auditValue(const std::string& param, const char* value)
 {
     return param + "=" + std::string{value ? value : ""};
 }
 
-static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const char* assetname, const char* ename)
+static void evaluate_rule(flexible_alert_t* self, rule_t* rule)
 {
+    const char* assetname = rule ? rule_asset(rule) : NULL;
+    if (!(self && rule && assetname)) {
+        return;
+    }
+
     zlist_t* params = zlist_new();
     zlist_autofree(params);
 
@@ -296,8 +326,8 @@ static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const 
     while (param) {
         char* topic = NULL;
         asprintf(&topic, "%s@%s", param, assetname);
-        fty_proto_t* ftymsg = reinterpret_cast<fty_proto_t*>(zhash_lookup(self->metrics, topic));
-        if (!ftymsg) {
+        fty_proto_t* proto = reinterpret_cast<fty_proto_t*>(zhash_lookup(self->metrics, topic));
+        if (!proto) {
             // some metrics are missing
             log_trace("abort evaluation of rule %s because %s metric is missing", rule_name(rule), topic);
 
@@ -310,10 +340,10 @@ static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const 
         zstr_free(&topic);
 
         // TTL should be set accorning shortest ttl in metric
-        if (min_ttl == 0 || min_ttl > int(fty_proto_ttl(ftymsg))) {
-            min_ttl = int(fty_proto_ttl(ftymsg));
+        if (min_ttl == 0 || min_ttl > int(fty_proto_ttl(proto))) {
+            min_ttl = int(fty_proto_ttl(proto));
         }
-        const char* value = fty_proto_value(ftymsg);
+        const char* value = fty_proto_value(proto);
         zlist_append(params, const_cast<char*>(value));
 
         auditValues += (auditValues.empty() ? "" : ", ") + auditValue(param, value);
@@ -325,6 +355,8 @@ static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const 
 
     // if no metric is missing
     if (!isMetricMissing) {
+        const char* ename = reinterpret_cast<const char*>(zhash_lookup(self->enames, assetname));
+
         char* message = NULL;
 
         // call the lua function
@@ -334,7 +366,7 @@ static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const 
             rule_name(rule), assetname, result);
 
         if (result != RULE_ERROR) {
-            flexible_alert_send_alert(self, rule, assetname, result, message, (min_ttl * 5) / 2);
+            send_alert(self, rule, assetname, result, message, (min_ttl * 5) / 2);
         }
         else {
             log_error(ANSI_COLOR_RED "error evaluating rule %s" ANSI_COLOR_RESET, rule_name(rule));
@@ -355,225 +387,130 @@ static void flexible_alert_evaluate(flexible_alert_t* self, rule_t* rule, const 
     audit_log_info("%8s %s (%s)", auditDesc.c_str(), rule_name(rule), auditValues.c_str());
 }
 
-//  --------------------------------------------------------------------------
-//  drop expired metrics
-
-static void flexible_alert_clean_metrics(flexible_alert_t* self)
+static void evaluate_rules(flexible_alert_t* self)
 {
-    zlist_t* topics = zhash_keys(self->metrics);
-    char* topic = reinterpret_cast<char*>(zlist_first(topics));
-    while (topic) {
-        fty_proto_t* ftymsg = reinterpret_cast<fty_proto_t*>(zhash_lookup(self->metrics, topic));
-        if (int64_t(fty_proto_time(ftymsg) + fty_proto_ttl(ftymsg)) < time(nullptr)) {
-            log_debug("delete topic %s", topic);
-            zhash_delete(self->metrics, topic);
-        }
-        topic = reinterpret_cast<char*>(zlist_next(topics));
-    }
-
-    zlist_destroy(&topics);
-}
-
-// --------------------------------------------------------------------------
-// returns true if metric message belong to gpi sensor
-static bool is_gpi_metric(fty_proto_t* metric)
-{
-    if (metric) {
-        const char* port     = fty_proto_aux_string(metric, FTY_PROTO_METRICS_AUX_PORT, "");
-        const char* ext_port = fty_proto_aux_string(metric, "ext-port", "");
-        if (strstr(port, "GPI") || ext_port != NULL) {
-            return true;
-        }
-    }
-    return false;
-}
-
-//  --------------------------------------------------------------------------
-//  Function handles incoming metrics, drives lua evaluation
-
-static void flexible_alert_handle_metric(flexible_alert_t* self, fty_proto_t** ftymsg_p, bool isShm)
-{
-    if (!self || !ftymsg_p || !*ftymsg_p)
-        return;
-
-    fty_proto_t* ftymsg = *ftymsg_p;
-    if (fty_proto_id(ftymsg) != FTY_PROTO_METRIC) {
+    if (!self) {
         return;
     }
 
-    if (isShm) {
-        char* subject = NULL;
-        asprintf(&subject, "%s@%s", fty_proto_type(ftymsg), fty_proto_name(ftymsg));
-        if (zhash_lookup(self->metrics, subject)) {
-            flexible_alert_clean_metrics(self);
-        }
-        zstr_free(&subject);
+    // remove outdated metrics from cache
+    cleanup_expired_metrics(self);
+
+    // evaluate rules
+    for (void* p = zhash_first(self->rules); p; p = zhash_next(self->rules)) {
+        rule_t* rule = reinterpret_cast<rule_t*>(p);
+        evaluate_rule(self, rule);
     }
-    else if (zhash_lookup(self->metrics, mlm_client_subject(self->mlm))) {
-        flexible_alert_clean_metrics(self);
+}
+
+static void populate_metric_in_cache(flexible_alert_t* self, fty_proto_t** ftymsg_p)
+{
+    fty_proto_t* proto = ftymsg_p ? *ftymsg_p : NULL;
+
+    if (!(self && proto && (fty_proto_id(proto) == FTY_PROTO_METRIC))) {
+        return;
     }
 
-    const char* assetname = fty_proto_name(ftymsg);
-    const char* quantity  = fty_proto_type(ftymsg);
-    const char* ename     = reinterpret_cast<const char*>(zhash_lookup(self->enames, assetname));
-    const char* extport   = fty_proto_aux_string(ftymsg, "ext-port", NULL);
+    const char* assetname = fty_proto_name(proto);
 
-    char* qty_dup = strdup(quantity);
+    // do nothing if no rule is concerned by the asset
+    zlist_t* rules_for_asset = reinterpret_cast<zlist_t*>(zhash_lookup(self->assets, assetname));
+    if (!(rules_for_asset && (zlist_size(rules_for_asset) != 0))) {
+        return;
+    }
 
-    //log_trace("handle metric: assetname: %s, qty: %s, isShm: %s", assetname, qty_dup, (isShm ? "true" : "false"));
+    char* quantity = strdup(fty_proto_type(proto));
 
     // fix quantity for sensors connected to other sensors
-    if (extport) {
-        // only sensors connected to other sensors have ext-name set
-        const char* qty_len_helper = quantity;
-        // second . marks the length
-        while ((*qty_len_helper != '\0') && (*qty_len_helper != '.')) {
-            ++qty_len_helper;
-        }
-        ++qty_len_helper;
-        if (*qty_len_helper == '\0') {
-            log_error("malformed quantity");
-            zstr_free(&qty_dup);
+    const char* ext_port = fty_proto_aux_string(proto, "ext-port", NULL);
+    if (ext_port) {
+        // only sensors connected to other sensors have 'ext-port'
+        // quantity example: status.GPI1.1
+        char* p = strchr(quantity, '.'); // locate first '.'
+        if (!p) {
+            log_error("malformed quantity (%s)", quantity);
+            zstr_free(&quantity);
             return;
         }
-        while ((*qty_len_helper != '\0') && (*qty_len_helper != '.')) {
-            ++qty_len_helper;
-        }
-
-        zstr_free(&qty_dup);
-        qty_dup = strndup(quantity, size_t(qty_len_helper - quantity));
-
-        log_trace("sensor '%s', new qty: %s", assetname, qty_dup);
+        p = strchr(p + 1, '.'); // locate 2nd '.' (gpi index)
+        if (p) { *p = 0; } // truncate if found
     }
 
-    zlist_t* functions_for_asset = reinterpret_cast<zlist_t*>(zhash_lookup(self->assets, assetname));
-    if (!functions_for_asset) {
-        zstr_free(&qty_dup);
-        // log_debug("asset '%s' has no associated function", assetname);
-        return;
-    }
-
-    if (!self->rules) { // nothing to do (no rule)
-        zstr_free(&qty_dup);
-        return;
-    }
-
-    // this asset has some evaluation functions
-    bool  metric_saved = false;
-    char* func = reinterpret_cast<char*>(zlist_first(functions_for_asset));
-    for (; func; func = reinterpret_cast<char*>(zlist_next(functions_for_asset))) {
-        rule_t* rule = reinterpret_cast<rule_t*>(zhash_lookup(self->rules, func));
-        if (!(rule && rule_metric_exists(rule, qty_dup))) {
+    for (void* p = zlist_first(rules_for_asset); p; p = zlist_next(rules_for_asset)) {
+        const char* rulename = reinterpret_cast<const char*>(p);
+        rule_t* rule = reinterpret_cast<rule_t*>(zhash_lookup(self->rules, rulename));
+        if (!(rule && rule_metric_exists(rule, quantity))) {
             continue;
         }
 
-        log_debug("qty '%s' exists in '%s'", qty_dup, rule_name(rule));
+        // set/update proto timestamp
+        fty_proto_set_time(proto, uint64_t(time(nullptr)));
 
-        // we have to evaluate this function/rule for our asset
-        // save metric into cache
-        if (!metric_saved) {
-            fty_proto_set_time(ftymsg, uint64_t(time(nullptr)));
-            // char *topic = zsys_sprintf ("%s@%s", qty_dup, assetname);
-            char* topic = NULL;
-            asprintf(&topic, "%s@%s", qty_dup, assetname);
-            zhash_update(self->metrics, topic, ftymsg);
-            zhash_freefn(self->metrics, topic, ftymsg_freefn);
-            *ftymsg_p = NULL; // owned by self->metrics
-            zstr_free(&topic);
-            metric_saved = true;
-        }
+        // asset is referenced in some rules; store it in self-metrics cache
+        char* topic = NULL;
+        asprintf(&topic, "%s@%s", quantity, assetname);
+        //log_debug("populate %s", topic);
+        zhash_update(self->metrics, topic, proto);
+        zhash_freefn(self->metrics, topic, proto_freefn);
+        zstr_free(&topic);
 
-        // evaluate
-        flexible_alert_evaluate(self, rule, assetname, ename);
+        *ftymsg_p = NULL; // **owned** by self->metrics
+        break;
     }
 
-    zstr_free(&qty_dup);
-}
-
-static void ask_for_sensor(flexible_alert_t* self, const char* sensor_name)
-{
-    if (!(self && sensor_name))
-        return;
-
-    if (!zhash_lookup(self->assets, sensor_name)) {
-        log_debug("I have to ask for sensor  %s", sensor_name);
-        s_republish_asset(self, {sensor_name});
-    }
-    else {
-        log_trace("I know this sensor %s", sensor_name);
-    }
+    zstr_free(&quantity);
 }
 
 //  --------------------------------------------------------------------------
-//  Function handles infoming metric sensors, fix message and pass it to metrics evaluation
-
-static void flexible_alert_handle_metric_sensor(flexible_alert_t* self, fty_proto_t** ftymsg_p)
-{
-    if (!self || !ftymsg_p || !*ftymsg_p)
-        return;
-
-    fty_proto_t* ftymsg = *ftymsg_p;
-    if (fty_proto_id(ftymsg) != FTY_PROTO_METRIC)
-        return;
-
-    // get name of asset based on GPIO port
-    const char* sensor_name = fty_proto_aux_string(ftymsg, FTY_PROTO_METRICS_SENSOR_AUX_SNAME, NULL);
-    if (!sensor_name) {
-        log_warning("No sensor name provided in sensor message");
-        return;
-    }
-
-    ask_for_sensor(self, sensor_name);
-    fty_proto_set_name(ftymsg, "%s", sensor_name);
-    flexible_alert_handle_metric(self, ftymsg_p, false);
-}
-
-//  --------------------------------------------------------------------------
-//  Function returns true if rule should be evaluated for particular asset.
+//  Function returns true/1 if rule should be evaluated for particular asset.
 //  This is decided by asset name (json "assets": []) or group (json "groups":[])
 
-static int is_rule_for_this_asset(rule_t* rule, fty_proto_t* ftymsg)
+static int is_rule_for_this_asset(rule_t* rule, fty_proto_t* proto)
 {
-    if (!rule || !ftymsg)
+    if (!(rule  && proto && (fty_proto_id(proto) == FTY_PROTO_ASSET))) {
         return 0;
+    }
 
-    const char* subtype = fty_proto_aux_string(ftymsg, FTY_PROTO_ASSET_SUBTYPE, "");
+    const char* subtype = fty_proto_aux_string(proto, FTY_PROTO_ASSET_SUBTYPE, "");
     if (streq(subtype, "sensorgpio")) {
-        if (rule_asset_exists(rule, fty_proto_name(ftymsg)) &&
-            rule_model_exists(rule, fty_proto_ext_string(ftymsg, FTY_PROTO_ASSET_EXT_MODEL, ""))
+        if (rule_asset_exists(rule, fty_proto_name(proto))
+            && rule_model_exists(rule, fty_proto_ext_string(proto, FTY_PROTO_ASSET_EXT_MODEL, ""))
         ) {
             return 1;
         }
         return 0;
     }
 
-    if (rule_asset_exists(rule, fty_proto_name(ftymsg)))
+    if (rule_asset_exists(rule, fty_proto_name(proto))) {
         return 1;
+    }
 
-    zhash_t* ext  = fty_proto_ext(ftymsg);
+    zhash_t* ext = fty_proto_ext(proto); // asset ext. attributes
     zlist_t* keys = zhash_keys(ext);
-    char*    key  = reinterpret_cast<char*>(zlist_first(keys));
-    while (key) {
-        if (strncmp("group.", key, 6) == 0) {
+    for (void* p = zlist_first(keys); p; p = zlist_next(keys)) {
+        char* key = reinterpret_cast<char*>(p);
+        if (strstr(key, "group.") == key) { // key starts w/ "group."
             // this is group
-            if (rule_group_exists(rule, reinterpret_cast<char*>(zhash_lookup(ext, key)))) {
+            char* group = reinterpret_cast<char*>(zhash_lookup(ext, key));
+            if (rule_group_exists(rule, group)) {
                 zlist_destroy(&keys);
                 return 1;
             }
         }
-        key = reinterpret_cast<char*>(zlist_next(keys));
     }
     zlist_destroy(&keys);
 
-    if (rule_model_exists(rule, fty_proto_ext_string(ftymsg, FTY_PROTO_ASSET_EXT_MODEL, "")))
+    if (   rule_model_exists(rule, fty_proto_ext_string(proto, FTY_PROTO_ASSET_EXT_MODEL, ""))
+        || rule_model_exists(rule, fty_proto_ext_string(proto, FTY_PROTO_ASSET_EXT_DEVICE_PART, ""))
+    ) {
         return 1;
-    if (rule_model_exists(rule, fty_proto_ext_string(ftymsg, FTY_PROTO_ASSET_EXT_DEVICE_PART, "")))
-        return 1;
+    }
 
-    if (rule_type_exists(rule, fty_proto_aux_string(ftymsg, FTY_PROTO_ASSET_AUX_TYPE, "")))
+    if (   rule_type_exists(rule, fty_proto_aux_string(proto, FTY_PROTO_ASSET_AUX_TYPE, ""))
+        || rule_type_exists(rule, fty_proto_aux_string(proto, FTY_PROTO_ASSET_AUX_SUBTYPE, ""))
+    ) {
         return 1;
-    if (rule_type_exists(rule, fty_proto_aux_string(ftymsg, FTY_PROTO_ASSET_AUX_SUBTYPE, "")))
-        return 1;
+    }
 
     return 0;
 }
@@ -585,32 +522,31 @@ static int is_rule_for_this_asset(rule_t* rule, fty_proto_t* ftymsg)
 //fwd decl.
 static zmsg_t* flexible_alert_delete_rule(flexible_alert_t* self, const char* name, const char* ruledir);
 
-static void flexible_alert_handle_asset(flexible_alert_t* self, fty_proto_t* ftymsg, const char* ruledir)
+static void flexible_alert_handle_asset(flexible_alert_t* self, fty_proto_t* proto, const char* ruledir)
 {
-    if (!self || !ftymsg)
+    if (!(self && proto && (fty_proto_id(proto) == FTY_PROTO_ASSET))) {
         return;
-    if (fty_proto_id(ftymsg) != FTY_PROTO_ASSET)
-        return;
+    }
 
-    const char* operation = fty_proto_operation(ftymsg);
-    const char* assetname = fty_proto_name(ftymsg);
-    const char* status = fty_proto_aux_string(ftymsg, FTY_PROTO_ASSET_STATUS, "active");
+    const char* operation = fty_proto_operation(proto);
+    const char* assetname = fty_proto_name(proto);
+    const char* status = fty_proto_aux_string(proto, FTY_PROTO_ASSET_STATUS, "active");
+
     log_debug("handle stream ASSETS operation: %s on %s (status: %s)", operation, assetname, status);
 
-    if (streq(operation, FTY_PROTO_ASSET_OP_DELETE) || !streq(status, "active"))
-    {
+    if (streq(operation, FTY_PROTO_ASSET_OP_DELETE)
+        || !streq(status, "active")
+    ) {
         zhash_delete(self->assets, assetname);
         zhash_delete(self->enames, assetname);
         zhash_delete(self->assetInfo, assetname);
 
         std::vector<std::string> rulesToDelete;
-        rule_t* rule = reinterpret_cast<rule_t*>(zhash_first(self->rules));
-        while (rule) {
+        for (void* p = zhash_first(self->rules); p; p = zhash_next(self->rules)) {
+            rule_t* rule = reinterpret_cast<rule_t*>(p);
             if (rule_asset_exists(rule, assetname)) {
-                //log_trace("rule '%s' is valid for '%s'", rule_name(rule), assetname);
                 rulesToDelete.push_back(rule_name(rule));
             }
-            rule = reinterpret_cast<rule_t*>(zhash_next(self->rules));
         }
 
         for (auto& ruleName : rulesToDelete) {
@@ -620,43 +556,42 @@ static void flexible_alert_handle_asset(flexible_alert_t* self, fty_proto_t* fty
     }
     else if (streq(operation, FTY_PROTO_ASSET_OP_UPDATE) || streq(operation, FTY_PROTO_ASSET_OP_INVENTORY))
     {
-        zlist_t* functions_for_asset = zlist_new();
-        zlist_autofree(functions_for_asset);
+        zlist_t* rules_for_asset = zlist_new();
+        zlist_autofree(rules_for_asset);
 
-        rule_t* rule = reinterpret_cast<rule_t*>(zhash_first(self->rules));
-        while (rule) {
-            if (is_rule_for_this_asset(rule, ftymsg)) {
-                zlist_append(functions_for_asset, const_cast<char*>(rule_name(rule)));
+        for (void* p = zhash_first(self->rules); p; p = zhash_next(self->rules)) {
+            rule_t* rule = reinterpret_cast<rule_t*>(p);
+            if (is_rule_for_this_asset(rule, proto)) {
+                zlist_append(rules_for_asset, const_cast<char*>(rule_name(rule)));
                 log_debug("rule '%s' is valid for '%s'", rule_name(rule), assetname);
             }
-            rule = reinterpret_cast<rule_t*>(zhash_next(self->rules));
         }
 
-        if (zlist_size(functions_for_asset) == 0) {
+        if (zlist_size(rules_for_asset) == 0) {
             log_trace("no rule for %s", assetname);
             zhash_delete(self->assets, assetname);
             zhash_delete(self->enames, assetname);
             zhash_delete(self->assetInfo, assetname);
-            zlist_destroy(&functions_for_asset);
+            zlist_destroy(&rules_for_asset);
             return;
         }
 
-        zhash_update(self->assets, assetname, functions_for_asset);
-        zhash_freefn(self->assets, assetname, asset_freefn);
+        zhash_update(self->assets, assetname, rules_for_asset);
+        zhash_freefn(self->assets, assetname, zlist_freefn);
 
         // assetInfo update policy:
         // - if new or
         // - if proto embed aux attributes (to get locations)
         {
             bool update = !zhash_lookup(self->assetInfo, assetname)
-                || (fty_proto_aux(ftymsg) && (zhash_size(fty_proto_aux(ftymsg)) != 0));
+                || (fty_proto_aux(proto) && (zhash_size(fty_proto_aux(proto)) != 0));
         #if 0
             log_trace(ANSI_COLOR_CYAN "Update %s assetInfo (%s)", assetname, (update ? "true" : "false"));
             fty_proto_print(ftymsg);
             log_trace(ANSI_COLOR_RESET);
         #endif
             if (update) {
-                asset_info_t* info = asset_info_new(ftymsg);
+                asset_info_t* info = asset_info_new(proto);
                 if (!info) {
                     log_error("asset_info_new failed (%s)", assetname);
                 }
@@ -669,10 +604,9 @@ static void flexible_alert_handle_asset(flexible_alert_t* self, fty_proto_t* fty
             }
         }
 
-        const char* ename = fty_proto_ext_string(ftymsg, "name", NULL);
+        const char* ename = fty_proto_ext_string(proto, "name", NULL);
         if (ename) {
-            zhash_update(self->enames, assetname, const_cast<char*>(ename));
-            zhash_freefn(self->enames, assetname, ename_freefn);
+            zhash_update(self->enames, assetname, const_cast<char*>(ename)); // enames is autofree
         }
     }
 }
@@ -1028,8 +962,9 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
 
 static zmsg_t* flexible_alert_get_rule(flexible_alert_t* self, char* name)
 {
-    if (!self || !name)
+    if (!(self && name)) {
         return NULL;
+    }
 
     rule_t* rule  = reinterpret_cast<rule_t*>(zhash_lookup(self->rules, name));
     zmsg_t* reply = zmsg_new();
@@ -1051,8 +986,9 @@ static zmsg_t* flexible_alert_get_rule(flexible_alert_t* self, char* name)
 
 static zmsg_t* flexible_alert_delete_rule(flexible_alert_t* self, const char* name, const char* dir)
 {
-    if (!self || !name || !dir)
+    if (!(self && name && dir)) {
         return NULL;
+    }
 
     zmsg_t* reply = zmsg_new();
     zmsg_addstr(reply, "DELETE");
@@ -1084,14 +1020,14 @@ static zmsg_t* flexible_alert_delete_rule(flexible_alert_t* self, const char* na
 //  --------------------------------------------------------------------------
 //  handling requests for adding rule.
 
-static zmsg_t* flexible_alert_add_rule(
-    flexible_alert_t* self, const char* json, const char* old_name, bool incomplete, const char* dir)
+static zmsg_t* flexible_alert_add_rule(flexible_alert_t* self, const char* json, const char* old_name, bool incomplete, const char* dir)
 {
-    if (!self || !json || !dir)
+    if (!(self && json && dir)) {
         return NULL;
+    }
 
     rule_t* newrule = rule_new();
-    zmsg_t* reply   = zmsg_new();
+    zmsg_t* reply = zmsg_new();
     if (rule_parse(newrule, json) != 0) {
         zmsg_addstr(reply, "ERROR");
         zmsg_addstr(reply, "INVALID_JSON");
@@ -1102,7 +1038,7 @@ static zmsg_t* flexible_alert_add_rule(
     rule_t* oldrule = reinterpret_cast<rule_t*>(zhash_lookup(self->rules, rule_name(newrule)));
     // we probably shouldn't merge other rules
     if (incomplete && oldrule && strstr(rule_name(oldrule), "sensorgpio")) {
-        log_info("merging incomplete rule %s from fty-alert-engine", rule_name(newrule));
+        log_info("merging incomplete rule %s", rule_name(newrule));
         rule_merge(oldrule, newrule);
     }
     if (old_name) {
@@ -1132,7 +1068,7 @@ static zmsg_t* flexible_alert_add_rule(
             zmsg_addstr(reply, json);
 
             log_info("Loading rule %s", path);
-            rule_t* rule1 = flexible_alert_load_one_rule(self, path);
+            rule_t* rule1 = load_rule(self, path);
             log_info("Loading rule %s done (%s)", path, (rule1 ? "success" : "failed"));
 
             if (rule1) {
@@ -1149,7 +1085,7 @@ static zmsg_t* flexible_alert_add_rule(
                     }
                     zlist_destroy(&keys);
                 }
-                s_republish_asset(self, assets);
+                republish_asset(self, assets);
             }
         }
         zstr_free(&path);
@@ -1186,19 +1122,30 @@ static void flexible_alert_metric_polling(zsock_t* pipe, void* args)
 
     while (!zsys_interrupted) {
         void* which = zpoller_wait(poller, fty_get_polling_interval() * 1000);
-        if (zpoller_terminated(poller) || zsys_interrupted) {
-            break;
-        }
 
-        if (zpoller_expired(poller)) {
-            fty::shm::shmMetrics metrics;
-            fty::shm::read_metrics(assets_pattern, metrics_pattern, metrics);
+        if (which == NULL) {
+            if (zpoller_terminated(poller) || zsys_interrupted) {
+                break;
+            }
 
-            log_debug("%s: read %zu metrics from SHM (assets: %s, metrics: %s)",
-                actor_name, metrics.size(), assets_pattern, metrics_pattern);
+            if (zpoller_expired(poller)) {
+                fty::shm::shmMetrics metrics;
+                int r = fty::shm::read_metrics(assets_pattern, metrics_pattern, metrics);
+                if (r != 0) {
+                    log_error("read_metrics failed (r: %d, %s, %s)", r, assets_pattern, metrics_pattern);
+                }
 
-            for (auto& metric : metrics) {
-                flexible_alert_handle_metric(self, &metric, true);
+                log_debug("%s: read %zu metrics from SHM (assets: %s, metrics: %s)",
+                    actor_name, metrics.size(), assets_pattern, metrics_pattern);
+
+                for (size_t i = 0; i < metrics.size(); i++) {
+                    fty_proto_t* metric = metrics.getDup(int(i));
+                    populate_metric_in_cache(self, &metric);
+                    fty_proto_destroy(&metric);
+                }
+
+                // evaluate rule instances, notify alerts...
+                evaluate_rules(self);
             }
         }
         else if (which == pipe) {
@@ -1221,7 +1168,7 @@ static void flexible_alert_metric_polling(zsock_t* pipe, void* args)
 //  --------------------------------------------------------------------------
 //  Actor running one instance of flexible alert class
 
-void flexible_alert_actor(zsock_t* pipe, void* args)
+void fty_flexible_alert_actor(zsock_t* pipe, void* args)
 {
     const char* actor_name = "flexible_alert_actor";
 
@@ -1240,7 +1187,14 @@ void flexible_alert_actor(zsock_t* pipe, void* args)
 
     zlist_t* params = reinterpret_cast<zlist_t*>(args);
     zlist_append(params, self);
+
     zactor_t* metric_polling = zactor_new(flexible_alert_metric_polling, params);
+    if (!metric_polling) {
+        log_error("metric_polling creation failed");
+        zpoller_destroy(&poller);
+        flexible_alert_destroy(&self);
+        return;
+    }
 
     zsock_signal(pipe, 0);
 
@@ -1252,10 +1206,17 @@ void flexible_alert_actor(zsock_t* pipe, void* args)
     while (!zsys_interrupted) {
         void* which = zpoller_wait(poller, POLL_TIMEOUT_MS);
 
-        if (which == pipe) {
+        if (which == NULL) {
+            if (zpoller_terminated(poller) || zsys_interrupted) {
+                break;
+            }
+        }
+        else if (which == pipe) {
             zmsg_t* msg = zmsg_recv(pipe);
             char*   cmd = zmsg_popstr(msg);
             bool term{false};
+
+            log_info("%s received", cmd);
 
             if (!cmd) {
                 log_debug("Invalid command.");
@@ -1263,25 +1224,34 @@ void flexible_alert_actor(zsock_t* pipe, void* args)
             else if (streq(cmd, "$TERM")) {
                 term = true;
             }
-            else if (streq(cmd, "BIND")) {
+            else if (streq(cmd, "CONNECT")) {
                 char* endpoint = zmsg_popstr(msg);
-                char* myname   = zmsg_popstr(msg);
-                assert(endpoint && myname);
-                mlm_client_connect(self->mlm, endpoint, 5000, myname);
+                char* address = zmsg_popstr(msg);
+                assert(endpoint && address);
+                int r = mlm_client_connect(self->mlm, endpoint, 5000, address);
+                if (r != 0) {
+                    log_error("mlm_client_connect failed (endpoint: %s, address: %s)", endpoint, address);
+                }
                 zstr_free(&endpoint);
-                zstr_free(&myname);
+                zstr_free(&address);
             }
             else if (streq(cmd, "PRODUCER")) {
                 char* stream = zmsg_popstr(msg);
                 assert(stream);
-                mlm_client_set_producer(self->mlm, stream);
+                int r = mlm_client_set_producer(self->mlm, stream);
+                if (r != 0) {
+                    log_error("mlm_client_set_producer failed (stream: %s)", stream);
+                }
                 zstr_free(&stream);
             }
             else if (streq(cmd, "CONSUMER")) {
                 char* stream  = zmsg_popstr(msg);
                 char* pattern = zmsg_popstr(msg);
                 assert(stream && pattern);
-                mlm_client_set_consumer(self->mlm, stream, pattern);
+                int r = mlm_client_set_consumer(self->mlm, stream, pattern);
+                if (r != 0) {
+                    log_error("mlm_client_set_consumer failed (stream: %s, pattern: %s)", stream, pattern);
+                }
                 zstr_free(&stream);
                 zstr_free(&pattern);
             }
@@ -1289,7 +1259,10 @@ void flexible_alert_actor(zsock_t* pipe, void* args)
                 zstr_free(&ruledir);
                 ruledir = zmsg_popstr(msg);
                 assert(ruledir);
-                flexible_alert_load_rules(self, ruledir);
+                int r = load_rules(self, ruledir);
+                if (r != 0) {
+                    log_error("load_rules failed (r: %d, ruledir: %s)", r, ruledir);
+                }
             }
             else {
                 log_warning("Unknown command (%s).", cmd);
@@ -1303,51 +1276,83 @@ void flexible_alert_actor(zsock_t* pipe, void* args)
         else if (which == mlm_client_msgpipe(self->mlm)) {
             zmsg_t* msg = mlm_client_recv(self->mlm);
             const char* command = mlm_client_command(self->mlm);
+            const char* subject = mlm_client_subject(self->mlm);
+            const char* sender = mlm_client_sender(self->mlm);
+            const char* address = mlm_client_address(self->mlm);
 
-            if (fty_proto_is(msg)) { // eg. STREAM DELIVER command
-                const char* address = mlm_client_address(self->mlm);
-                fty_proto_t* fmsg = fty_proto_decode(&msg);
+            if (streq(command, "STREAM DELIVER")) {
 
-                if (fty_proto_id(fmsg) == FTY_PROTO_ASSET) {
-                    log_trace(ANSI_COLOR_CYAN "Receive PROTO_ASSET %s@%s on stream %s" ANSI_COLOR_RESET,
-                        fty_proto_operation(fmsg), fty_proto_name(fmsg), address);
-                    flexible_alert_handle_asset(self, fmsg, ruledir);
+                log_debug("Receive %s from %s (subject %s)", command, sender, subject);
+
+                if (fty_proto_is(msg)) {
+                    fty_proto_t* proto = fty_proto_decode(&msg);
+
+                    if (!proto) {
+                        log_error("proto is NULL");
+                    }
+                    else if (fty_proto_id(proto) == FTY_PROTO_ASSET) {
+                        log_trace(ANSI_COLOR_CYAN "Receive PROTO_ASSET %s@%s on stream %s" ANSI_COLOR_RESET,
+                            fty_proto_operation(proto), fty_proto_name(proto), address);
+                        flexible_alert_handle_asset(self, proto, ruledir);
+                    }
+                    else if (fty_proto_id(proto) == FTY_PROTO_METRIC) {
+                        log_trace(ANSI_COLOR_CYAN "Receive PROTO_METRIC %s@%s on stream %s" ANSI_COLOR_RESET,
+                            fty_proto_type(proto), fty_proto_name(proto), address);
+
+                        bool populate{false};
+                        if (streq(address, FTY_PROTO_STREAM_LICENSING_ANNOUNCEMENTS)
+                            || streq(address, FTY_PROTO_STREAM_METRICS)
+                        ) {
+                            // messages from FTY_PROTO_STREAM_METRICS are regular metrics
+                            // LICENSING.EXPIRE: bmsg publish licensing-limitation licensing.expire 7 days
+                            populate = true;
+                        }
+                        else if (streq(address, FTY_PROTO_STREAM_METRICS_SENSOR)) {
+                            // messages from FTY_PROTO_STREAM_METRICS_SENSORS are gpi sensors
+                            if (is_metric_gpi(proto)) {
+                                // get name of asset based on GPIO port
+                                const char* sensor_sname = fty_proto_aux_string(proto, FTY_PROTO_METRICS_SENSOR_AUX_SNAME, NULL);
+                                if (sensor_sname) {
+                                    if (!zhash_lookup(self->assets, sensor_sname)) {
+                                        log_debug("Ask REPUBLISH for sensor %s", sensor_sname);
+                                        republish_asset(self, {sensor_sname});
+                                    }
+
+                                    // **change** proto name w/ sensor sname
+                                    fty_proto_set_name(proto, "%s", sensor_sname);
+                                    populate = true;
+                                }
+                                else {
+                                    log_warning("No aux '%s' provided for sensor %s",
+                                        FTY_PROTO_METRICS_SENSOR_AUX_SNAME, fty_proto_name(proto));
+                                }
+                            }
+                        }
+                        else {
+                            log_debug("Message FTY_PROTO_METRIC, invalid address ('%s')", address);
+                        }
+
+                        if (populate) {
+                            populate_metric_in_cache(self, &proto);
+                        }
+                    }
+                    fty_proto_destroy(&proto);
                 }
-                else if (fty_proto_id(fmsg) == FTY_PROTO_METRIC) {
-                    log_trace(ANSI_COLOR_CYAN "Receive PROTO_METRIC %s@%s on stream %s" ANSI_COLOR_RESET,
-                        fty_proto_type(fmsg), fty_proto_name(fmsg), address);
-
-                    if (streq(address, FTY_PROTO_STREAM_METRICS) ||
-                        streq(address, FTY_PROTO_STREAM_LICENSING_ANNOUNCEMENTS))
-                    {
-                        // messages from FTY_PROTO_STREAM_METRICS are regular metrics
-                        // LICENSING.EXPIRE: bmsg publish licensing-limitation licensing.expire 7 days
-                        flexible_alert_handle_metric(self, &fmsg, false);
-                    }
-                    else if (streq(address, FTY_PROTO_STREAM_METRICS_SENSOR)) {
-                        // messages from FTY_PROTO_STREAM_METRICS_SENSORS are gpi sensors
-                        if (is_gpi_metric(fmsg))
-                            flexible_alert_handle_metric_sensor(self, &fmsg);
-                    }
-                    else {
-                        log_debug("Message FTY_PROTO_METRIC, invalid address ('%s')", address);
-                    }
-                }
-                fty_proto_destroy(&fmsg);
             }
             else if (streq(command, "MAILBOX DELIVER")) {
+
+                log_info("Receive %s from %s (subject %s)", command, sender, subject);
+
                 // someone is addressing us directly
                 // protocol frames cmd/param1/param2
                 char* cmd = zmsg_popstr(msg);
                 char* p1  = zmsg_popstr(msg);
                 char* p2  = zmsg_popstr(msg);
 
-                log_info("MAILBOX DELIVER: %s from %s", cmd, mlm_client_sender(self->mlm));
-
                 // XXX: fty-alert-engine does not know about configured
                 // actions. The proper fix is to extend the protocol to
                 // flag a rule as incomplete.
-                bool incomplete = streq(mlm_client_sender(self->mlm), "fty-autoconfig");
+                bool incomplete = streq(sender, "fty-autoconfig");
 
                 zmsg_t* reply = NULL;
                 if (!cmd) {
@@ -1410,9 +1415,9 @@ void flexible_alert_actor(zsock_t* pipe, void* args)
     }
 
     zactor_destroy(&metric_polling);
-    zstr_free(&ruledir);
     zpoller_destroy(&poller);
     flexible_alert_destroy(&self);
+    zstr_free(&ruledir);
 
     log_info("%s ended", actor_name);
 }

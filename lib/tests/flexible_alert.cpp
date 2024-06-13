@@ -1,6 +1,7 @@
 #include "src/flexible_alert.h"
 #include "src/audit_log.h"
 #include <catch2/catch.hpp>
+#include <fty_log.h>
 #include <fty_shm.h>
 #include <malamute.h>
 #include <iostream>
@@ -10,6 +11,9 @@ TEST_CASE("flexible alert test")
     const char* SELFTEST_DIR_RO = "tests/selftest-ro";
     const char* SELFTEST_DIR_RW = ".";
 
+    const char* MLM_ENDPOINT = "inproc://fty-alert-flexible-test";
+    const char* ACTOR_ADDRESS = "alert-flexible-test";
+
     // initialize log for auditability
     AuditLog::init("flexible-alert-test");
     // logs audit, see /etc/fty/ftylog.cfg (requires privileges)
@@ -18,85 +22,94 @@ TEST_CASE("flexible alert test")
     //AuditLog::deinit(); return;
 
     fty_shm_set_test_dir(SELFTEST_DIR_RW);
-    fty_shm_set_default_polling_interval(5);
+    const int polling_interval = 5;
+    fty_shm_set_default_polling_interval(polling_interval);
+
+    const size_t totalRulesCnt = 9;
 
     // start malamute
-    static const char* endpoint = "inproc://fty-metric-snmp";
-    zactor_t*          malamute = zactor_new(mlm_server, const_cast<char*>("Malamute"));
-    zstr_sendx(malamute, "BIND", endpoint, nullptr);
+    zactor_t* server = zactor_new(mlm_server, const_cast<char*>("Malamute"));
+    REQUIRE(server);
+    zstr_sendx(server, "BIND", MLM_ENDPOINT, nullptr);
 
     // create flexible alert actor
     zlist_t* params = zlist_new();
-    zlist_append(params, const_cast<char*>(".*"));
-    zlist_append(params, const_cast<char*>(".*"));
+    REQUIRE(params);
+    zlist_append(params, const_cast<char*>(".*")); //assets pattern
+    zlist_append(params, const_cast<char*>(".*")); //metrics pattern
 
-    zactor_t* fs = zactor_new(flexible_alert_actor, params);
-    REQUIRE(fs);
-    zstr_sendx(fs, "BIND", endpoint, "me", nullptr);
-    zstr_sendx(fs, "PRODUCER", FTY_PROTO_STREAM_ALERTS_SYS, nullptr);
-    zstr_sendx(fs, "CONSUMER", FTY_PROTO_STREAM_ASSETS, ".*", nullptr);
-    // zstr_sendx (fs, "CONSUMER", FTY_PROTO_STREAM_METRICS, ".*", nullptr);
-    zstr_sendx(fs, "CONSUMER", FTY_PROTO_STREAM_METRICS_SENSOR, ".*", nullptr);
+    zactor_t* flexible_actor = zactor_new(fty_flexible_alert_actor, params);
+    REQUIRE(flexible_actor);
+    zstr_sendx(flexible_actor, "CONNECT", MLM_ENDPOINT, ACTOR_ADDRESS, nullptr);
+    zstr_sendx(flexible_actor, "PRODUCER", FTY_PROTO_STREAM_ALERTS_SYS, nullptr);
+    zstr_sendx(flexible_actor, "CONSUMER", FTY_PROTO_STREAM_ASSETS, ".*", nullptr);
+    // zstr_sendx (flexible_actor, "CONSUMER", FTY_PROTO_STREAM_METRICS, ".*", nullptr);
+    zstr_sendx(flexible_actor, "CONSUMER", FTY_PROTO_STREAM_METRICS_SENSOR, ".*", nullptr);
+
     char* rules_dir = nullptr;
     asprintf(&rules_dir, "%s/rules", SELFTEST_DIR_RO);
-    CHECK(rules_dir != nullptr);
-    zstr_sendx(fs, "LOADRULES", rules_dir, nullptr);
+    REQUIRE(rules_dir != nullptr);
+    zstr_sendx(flexible_actor, "LOADRULES", rules_dir, nullptr);
     zstr_free(&rules_dir);
 
     // create mlm client for interaction with actor
     mlm_client_t* asset = mlm_client_new();
-    mlm_client_connect(asset, endpoint, 5000, "asset-autoupdate");
-    mlm_client_set_producer(asset, FTY_PROTO_STREAM_ASSETS);
-    mlm_client_set_consumer(asset, FTY_PROTO_STREAM_ALERTS_SYS, ".*");
+    REQUIRE(asset);
+    int r = mlm_client_connect(asset, MLM_ENDPOINT, 5000, "asset-autoupdate-test");
+    CHECK(r == 0);
+    r = mlm_client_set_producer(asset, FTY_PROTO_STREAM_ASSETS);
+    CHECK(r == 0);
+    r = mlm_client_set_consumer(asset, FTY_PROTO_STREAM_ALERTS_SYS, ".*");
+    CHECK(r == 0);
 
-    // metric client
-    //    mlm_client_t *metric = mlm_client_new ();
-    //    mlm_client_connect (metric, endpoint, 5000, "metric");
-    //    mlm_client_set_producer (metric, FTY_PROTO_STREAM_METRICS);
+    // let malamute breath a while
+    zclock_sleep(500);
 
-    // let malamute establish everything
-    zclock_sleep(200);
     {
         zhash_t* ext = zhash_new();
         zhash_autofree(ext);
-        zhash_insert(ext, "group.1", const_cast<char*>("all-upses"));
-        zhash_insert(ext, "name", const_cast<char*>("mý děvíce"));
-        zmsg_t* assetmsg = fty_proto_encode_asset(nullptr, "mydevice", "update", ext);
-        mlm_client_send(asset, "myasset", &assetmsg);
+        //zhash_insert(ext, "group.1", const_cast<char*>("all-upses"));
+        zhash_insert(ext, "name", const_cast<char*>("my_ups"));
+        zmsg_t* msg = fty_proto_encode_asset(nullptr, "ups-1234", "update", ext);
+        r = mlm_client_send(asset, "update-asset-ups-1234", &msg);
+        zmsg_destroy(&msg);
         zhash_destroy(&ext);
-        zmsg_destroy(&assetmsg);
+        CHECK(r == 0);
     }
-    zclock_sleep(200);
-    {
-        // send metric, receive alert
-        //        zmsg_t *msg = fty_proto_encode_metric (
-        //            nullptr,
-        //            time (nullptr),
-        //            60,
-        //            "status.ups",
-        //            "mydevice",
-        //            "64",
-        //            "");
-        //        mlm_client_send (metric, "status.ups@mydevice", &msg);
-        fty::shm::write_metric("mydevice", "status.ups", "64", "", 5);
 
-        zmsg_t* alert = mlm_client_recv(asset);
-        CHECK(fty_proto_is(alert));
-        fty_proto_t* ftymsg = fty_proto_decode(&alert);
-        fty_proto_print(ftymsg);
-        fty_proto_destroy(&ftymsg);
-        zmsg_destroy(&alert);
-    }
-    zclock_sleep(200);
     {
+        zmsg_t* msg = fty_proto_encode_metric(nullptr, uint64_t(time(nullptr)), uint32_t(polling_interval * 2), "status.ups", "ups-1234", "64", "");
+        fty_proto_t* proto = fty_proto_decode(&msg);
+        zmsg_destroy(&msg);
+        r = fty::shm::write_metric(proto);
+        fty_proto_destroy(&proto);
+        CHECK(r == 0);
+
+        log_debug("Wait for alert...");
+        zmsg_t* alert = mlm_client_recv(asset);
+        log_debug("Alert received");
+
+        REQUIRE(alert);
+        CHECK(fty_proto_is(alert));
+        proto = fty_proto_decode(&alert);
+        zmsg_destroy(&alert);
+        REQUIRE(proto);
+        fty_proto_print(proto);
+        fty_proto_destroy(&proto);
+    }
+
+    {
+
         // test LIST
         zmsg_t* msg = zmsg_new();
         zmsg_addstr(msg, "LIST");
         zmsg_addstr(msg, "all");
         zmsg_addstr(msg, "myclass");
-        mlm_client_sendto(asset, "me", "status.ups@mydevice", nullptr, 1000, &msg);
+        r = mlm_client_sendto(asset, ACTOR_ADDRESS, "test-LIST", nullptr, 1000, &msg);
+        CHECK(r == 0);
 
         zmsg_t* reply = mlm_client_recv(asset);
+        CHECK(reply);
 
         char* item = zmsg_popstr(reply);
         CHECK(streq("LIST", item));
@@ -110,8 +123,11 @@ TEST_CASE("flexible alert test")
         CHECK(streq("myclass", item));
         zstr_free(&item);
 
+        CHECK(zmsg_size(reply) == totalRulesCnt); // all rules
+
         zmsg_destroy(&reply);
     }
+
     {
         // test LIST2 (LIST version 2)
 
@@ -150,8 +166,9 @@ TEST_CASE("flexible alert test")
             zmsg_t* command = zmsg_new();
             zmsg_addstrf(command, "%s", "LIST2"); // version 2
             zmsg_addstrf(command, "%s", test.payload.c_str());
-            mlm_client_sendto(asset, "me", "anythingyouwant", nullptr, 1000, &command);
+            r = mlm_client_sendto(asset, ACTOR_ADDRESS, "anythingyouwant", nullptr, 1000, &command);
             zmsg_destroy(&command);
+            CHECK(r == 0);
 
             zmsg_t* recv = mlm_client_recv(asset);
             REQUIRE(recv);
@@ -166,27 +183,29 @@ TEST_CASE("flexible alert test")
             zmsg_destroy(&recv);
         }
     }
+
     {
         struct {
             std::string payload; // json
             size_t ruleCnt; // rules count (success expected)
         } testVector[] = {
-            { R"({ "type": "all", "rule_class": "deprecated?" })", 8 },
-            { R"({ "type": "all" })", 8 },
-            { R"({ "type": "" })", 8 }, // eg. all
-            { R"({})", 8 }, // type=="", eg all
-            { R"({ "type": "flexible" })", 8 },
+            { R"({ "type": "all", "rule_class": "deprecated?" })", totalRulesCnt },
+            { R"({ "type": "all" })", totalRulesCnt },
+            { R"({ "type": "" })", totalRulesCnt }, // eg. all
+            { R"({})", totalRulesCnt }, // type=="", eg all
+            { R"({ "type": "flexible" })", totalRulesCnt },
             { R"({ "category": "hello" })", 0 },
             { R"({ "category": "sts" })", 3 },
-            { R"({ "category": "other" })", 5 },
+            { R"({ "category": "other" })", totalRulesCnt - 3 }, // all - sts
         };
 
         for (auto& test : testVector) {
             zmsg_t* command = zmsg_new();
             zmsg_addstrf(command, "%s", "LIST2"); // version 2
             zmsg_addstrf(command, "%s", test.payload.c_str());
-            mlm_client_sendto(asset, "me", "anythingyouwant", NULL, 1000, &command);
+            r = mlm_client_sendto(asset, ACTOR_ADDRESS, "anythingyouwant", NULL, 1000, &command);
             zmsg_destroy(&command);
+            CHECK(r == 0);
 
             zmsg_t* recv = mlm_client_recv(asset);
             REQUIRE(recv);
@@ -218,14 +237,17 @@ TEST_CASE("flexible alert test")
             zmsg_destroy(&recv);
         }
     }
+
     {
         // test GET
         zmsg_t* msg = zmsg_new();
         zmsg_addstr(msg, "GET");
         zmsg_addstr(msg, "load");
-        mlm_client_sendto(asset, "me", "ignored", nullptr, 1000, &msg);
+        r = mlm_client_sendto(asset, ACTOR_ADDRESS, "ignored", nullptr, 1000, &msg);
+        CHECK(r == 0);
 
         zmsg_t* reply = mlm_client_recv(asset);
+        CHECK(reply);
 
         char* item = zmsg_popstr(reply);
         CHECK(streq("OK", item));
@@ -245,16 +267,19 @@ TEST_CASE("flexible alert test")
             "end\"}";
 
         // For ADD and DELETE tests use the RW directory
-        zstr_sendx(fs, "LOADRULES", SELFTEST_DIR_RW, nullptr);
+        zstr_sendx(flexible_actor, "LOADRULES", SELFTEST_DIR_RW, nullptr);
         zclock_sleep(200);
 
         zmsg_t* msg = zmsg_new();
         zmsg_addstr(msg, "ADD");
         zmsg_addstr(msg, testrulejson);
-        mlm_client_sendto(asset, "me", "ignored", nullptr, 1000, &msg);
+        r = mlm_client_sendto(asset, ACTOR_ADDRESS, "ignored", nullptr, 1000, &msg);
+        CHECK(r == 0);
 
         zmsg_t* reply = mlm_client_recv(asset);
-        char*   item  = zmsg_popstr(reply);
+        CHECK(reply);
+
+        char* item = zmsg_popstr(reply);
         CHECK(streq("OK", item));
         zstr_free(&item);
 
@@ -265,14 +290,17 @@ TEST_CASE("flexible alert test")
 
         zmsg_destroy(&reply);
     }
+
     {
         // test DELETE
         zmsg_t* msg = zmsg_new();
         zmsg_addstr(msg, "DELETE");
         zmsg_addstr(msg, "testrulejson");
-        mlm_client_sendto(asset, "me", "ignored", nullptr, 1000, &msg);
+        r = mlm_client_sendto(asset, ACTOR_ADDRESS, "ignored", nullptr, 1000, &msg);
+        CHECK(r == 0);
 
         zmsg_t* reply = mlm_client_recv(asset);
+        CHECK(reply);
 
         char* item = zmsg_popstr(reply);
         CHECK(streq("DELETE", item));
@@ -288,11 +316,12 @@ TEST_CASE("flexible alert test")
 
         zmsg_destroy(&reply);
     }
+
     mlm_client_destroy(&asset);
-    // destroy actor
-    zactor_destroy(&fs);
-    // destroy malamute
-    zactor_destroy(&malamute);
+    zactor_destroy(&flexible_actor);
+    zlist_destroy(&params);
+    zactor_destroy(&server);
+
     fty_shm_delete_test_dir();
 
     AuditLog::deinit();

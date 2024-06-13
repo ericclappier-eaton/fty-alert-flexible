@@ -24,4 +24,4 @@
 #include <czmq.h>
 
 // Flexible alert actor
-void flexible_alert_actor(zsock_t* pipe, void* args);
+void fty_flexible_alert_actor(zsock_t* pipe, void* args);
