@@ -94,7 +94,7 @@ static flexible_alert_t* flexible_alert_new()
         return NULL;
     }
 
-    memset(self, 0, sizeof(flexible_alert_t));
+    memset(self, 0, sizeof(*self));
 
     self->rules     = zhash_new();
     self->metrics   = zhash_new();
@@ -340,7 +340,7 @@ static void evaluate_rule(flexible_alert_t* self, rule_t* rule)
         zstr_free(&topic);
 
         // TTL should be set accorning shortest ttl in metric
-        if (min_ttl == 0 || min_ttl > int(fty_proto_ttl(proto))) {
+        if ((min_ttl == 0) || (min_ttl > int(fty_proto_ttl(proto)))) {
             min_ttl = int(fty_proto_ttl(proto));
         }
         const char* value = fty_proto_value(proto);
@@ -403,10 +403,8 @@ static void evaluate_rules(flexible_alert_t* self)
     }
 }
 
-static void populate_metric_in_cache(flexible_alert_t* self, fty_proto_t** ftymsg_p)
+static void populate_metric_in_cache(flexible_alert_t* self, fty_proto_t* proto)
 {
-    fty_proto_t* proto = ftymsg_p ? *ftymsg_p : NULL;
-
     if (!(self && proto && (fty_proto_id(proto) == FTY_PROTO_METRIC))) {
         return;
     }
@@ -422,39 +420,34 @@ static void populate_metric_in_cache(flexible_alert_t* self, fty_proto_t** ftyms
     char* quantity = strdup(fty_proto_type(proto));
 
     // fix quantity for sensors connected to other sensors
-    const char* ext_port = fty_proto_aux_string(proto, "ext-port", NULL);
-    if (ext_port) {
+    if (fty_proto_aux_string(proto, "ext-port", NULL)) {
         // only sensors connected to other sensors have 'ext-port'
         // quantity example: status.GPI1.1
         char* p = strchr(quantity, '.'); // locate first '.'
         if (!p) {
-            log_error("malformed quantity (%s)", quantity);
+            log_error("malformed quantity (asset: %s, quantity: %s)", assetname, quantity);
             zstr_free(&quantity);
             return;
         }
         p = strchr(p + 1, '.'); // locate 2nd '.' (gpi index)
-        if (p) { *p = 0; } // truncate if found
+        if (p) { *p = 0; } // truncate quantity
     }
 
     for (void* p = zlist_first(rules_for_asset); p; p = zlist_next(rules_for_asset)) {
         const char* rulename = reinterpret_cast<const char*>(p);
         rule_t* rule = reinterpret_cast<rule_t*>(zhash_lookup(self->rules, rulename));
         if (!(rule && rule_metric_exists(rule, quantity))) {
-            continue;
+            continue; // quantity not referenced by rule
         }
 
-        // set/update proto timestamp
-        fty_proto_set_time(proto, uint64_t(time(nullptr)));
-
-        // asset is referenced in some rules; store it in self-metrics cache
+        // quantity is referenced by some rules; store it in self-metrics cache
         char* topic = NULL;
         asprintf(&topic, "%s@%s", quantity, assetname);
         //log_debug("populate %s", topic);
-        zhash_update(self->metrics, topic, proto);
+        fty_proto_t* dup = fty_proto_dup(proto); // **owned** by self->metrics
+        zhash_update(self->metrics, topic, dup);
         zhash_freefn(self->metrics, topic, proto_freefn);
         zstr_free(&topic);
-
-        *ftymsg_p = NULL; // **owned** by self->metrics
         break;
     }
 
@@ -1129,19 +1122,22 @@ static void flexible_alert_metric_polling(zsock_t* pipe, void* args)
             }
 
             if (zpoller_expired(poller)) {
-                fty::shm::shmMetrics metrics;
-                int r = fty::shm::read_metrics(assets_pattern, metrics_pattern, metrics);
-                if (r != 0) {
-                    log_error("read_metrics failed (r: %d, %s, %s)", r, assets_pattern, metrics_pattern);
-                }
+                // populate metrics from shared memory
+                {
+                    fty::shm::shmMetrics metrics;
+                    int r = fty::shm::read_metrics(assets_pattern, metrics_pattern, metrics);
+                    if (r != 0) {
+                        log_error("read_metrics failed (r: %d, assets: %s, metrics: %s)",
+                            r, assets_pattern, metrics_pattern);
+                    }
+                    else {
+                        log_debug("%s: read %zu metrics from SHM (assets: %s, metrics: %s)",
+                            actor_name, metrics.size(), assets_pattern, metrics_pattern);
 
-                log_debug("%s: read %zu metrics from SHM (assets: %s, metrics: %s)",
-                    actor_name, metrics.size(), assets_pattern, metrics_pattern);
-
-                for (size_t i = 0; i < metrics.size(); i++) {
-                    fty_proto_t* metric = metrics.getDup(int(i));
-                    populate_metric_in_cache(self, &metric);
-                    fty_proto_destroy(&metric);
+                        for (fty_proto_t* metric : metrics) {
+                            populate_metric_in_cache(self, metric);
+                        }
+                    }
                 }
 
                 // evaluate rule instances, notify alerts...
@@ -1333,7 +1329,8 @@ void fty_flexible_alert_actor(zsock_t* pipe, void* args)
                         }
 
                         if (populate) {
-                            populate_metric_in_cache(self, &proto);
+                            fty_proto_set_time(proto, uint64_t(time(nullptr))); // set timestamp
+                            populate_metric_in_cache(self, proto);
                         }
                     }
                     fty_proto_destroy(&proto);
