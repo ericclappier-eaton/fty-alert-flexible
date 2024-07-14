@@ -49,9 +49,19 @@ struct _rule_t
     lua_State* lua;
 };
 
+//  --------------------------------------------------------------------------
+
 static int strcmp_fn(void* i1, void* i2)
 {
     return strcmp(reinterpret_cast<char*>(i1), reinterpret_cast<char*>(i2));
+}
+
+static void rule_destroy_lua(rule_t* self)
+{
+    if (self && self->lua) {
+        lua_close(self->lua);
+        self->lua = nullptr;
+    }
 }
 
 //  --------------------------------------------------------------------------
@@ -97,6 +107,33 @@ rule_t* rule_new()
 }
 
 //  --------------------------------------------------------------------------
+//  Destroy the rule
+
+void rule_destroy(rule_t** self_p)
+{
+    if (self_p && (*self_p)) {
+        rule_t* self = *self_p;
+
+        zstr_free(&self->name);
+        zstr_free(&self->description);
+        zstr_free(&self->logical_asset);
+        zstr_free(&self->evaluation);
+        zlist_destroy(&self->metrics);
+        zlist_destroy(&self->assets);
+        zlist_destroy(&self->groups);
+        zlist_destroy(&self->models);
+        zlist_destroy(&self->types);
+        zhash_destroy(&self->result_actions);
+        zhashx_destroy(&self->variables);
+
+        rule_destroy_lua(self);
+
+        free(self);
+        *self_p = nullptr;
+    }
+}
+
+//  --------------------------------------------------------------------------
 //  zhash_freefn callback for result_actions list
 static void zlist_freefn(void* p)
 {
@@ -110,8 +147,9 @@ static void zlist_freefn(void* p)
 //  Add rule result action
 void rule_add_result_action(rule_t* self, const char* result, const char* action)
 {
-    if (!self || !result)
+    if (!(self && result)) {
         return;
+    }
 
     zlist_t* list = reinterpret_cast<zlist_t*>(zhash_lookup(self->result_actions, result));
     if (!list) {
@@ -125,8 +163,10 @@ void rule_add_result_action(rule_t* self, const char* result, const char* action
     }
 }
 
+//  --------------------------------------------------------------------------
 //  Parse rule from JSON.
 //  Returns 0 if ok, else failed
+
 int rule_parse(rule_t* self, const char* json)
 {
     if (!self) {
@@ -297,8 +337,10 @@ int rule_parse(rule_t* self, const char* json)
     return 1; // failed
 }
 
+//  --------------------------------------------------------------------------
 // Serialize rule to JSON
 // Caller must free the returned string
+
 char* rule_serialize(rule_t* self)
 {
     if (!self) {
@@ -426,6 +468,9 @@ const char* rule_name(rule_t* self)
     return self ? self->name : NULL;
 }
 
+//  --------------------------------------------------------------------------
+// Get asset from rule name
+
 const char* rule_asset(rule_t* self)
 {
     // asset from name
@@ -456,7 +501,6 @@ bool rule_group_exists(rule_t* self, const char* group)
 {
     return self && group && zlist_exists(self->groups, const_cast<char*>(group));
 }
-
 
 //  --------------------------------------------------------------------------
 //  Does rule contain this metric?
@@ -489,7 +533,6 @@ bool rule_model_exists(rule_t* self, const char* model)
 {
     return self && model && zlist_exists(self->models, const_cast<char*>(model));
 }
-
 
 //  --------------------------------------------------------------------------
 //  Does rule contain this type?
@@ -543,6 +586,7 @@ zhashx_t* rule_variables(rule_t* self)
 //  --------------------------------------------------------------------------
 //  Load json rule from file
 //  Returns 0 if ok
+
 int rule_load(rule_t* self, const char* path)
 {
     int fd = open(path, O_RDONLY);
@@ -584,6 +628,7 @@ int rule_load(rule_t* self, const char* path)
 
 //  --------------------------------------------------------------------------
 // Update new_rule with configured actions of old_rule
+
 void rule_merge(rule_t* old_rule, rule_t* new_rule)
 {
     zhash_destroy(&new_rule->result_actions);
@@ -596,6 +641,7 @@ void rule_merge(rule_t* old_rule, rule_t* new_rule)
 //  --------------------------------------------------------------------------
 //  Save json rule to file
 //  Returns 0 if ok
+
 int rule_save(rule_t* self, const char* path)
 {
     int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
@@ -610,8 +656,8 @@ int rule_save(rule_t* self, const char* path)
         return -2;
     }
     ssize_t r = write(fd, json, strlen(json));
-    zstr_free(&json);
     close(fd);
+    zstr_free(&json);
     if (r == -1) {
         log_error("Error while writing rule %s", path);
         return -3;
@@ -619,7 +665,8 @@ int rule_save(rule_t* self, const char* path)
     return 0;
 }
 
-// ZZZ return 1 if ok, else 0
+// lua compile
+// CAUTION: returns 1 if ok
 int rule_compile(rule_t* self)
 {
     if (!self) {
@@ -627,33 +674,34 @@ int rule_compile(rule_t* self)
     }
 
     // destroy old context
-    if (self->lua) {
-        lua_close(self->lua);
-        self->lua = nullptr;
-    }
+    rule_destroy_lua(self);
+
     // compile
 #if LUA_VERSION_NUM > 501
     self->lua = luaL_newstate();
 #else
     self->lua = lua_open();
 #endif
-    if (!self->lua)
+    if (!self->lua) {
+        log_error("rule '%s' has an luaL_newstate error", self->name);
         return 0;
+    }
+
     luaL_openlibs(self->lua); // get functions like print();
     if (luaL_dostring(self->lua, self->evaluation) != 0) {
         log_error("rule '%s' has an error", self->name);
         log_debug("ERROR, rule '%s' evaluation part\n%s", self->name, self->evaluation);
-        lua_close(self->lua);
-        self->lua = nullptr;
+        rule_destroy_lua(self);
         return 0;
     }
+
     lua_getglobal(self->lua, "main");
     if (!lua_isfunction(self->lua, -1)) {
         log_error("main function not found in rule %s", self->name);
-        lua_close(self->lua);
-        self->lua = nullptr;
+        rule_destroy_lua(self);
         return 0;
     }
+
     lua_pushnumber(self->lua, 0);
     lua_setglobal(self->lua, "OK");
     lua_pushnumber(self->lua, 1);
@@ -693,7 +741,7 @@ void rule_evaluate(rule_t* self, zlist_t* params, const char* iname, const char*
         *message = nullptr;
     }
 
-    if (!self || !params || !iname || !result || !message) {
+    if (!(self && params && iname && result && message)) {
         log_error("bad args");
         return;
     }
@@ -701,7 +749,7 @@ void rule_evaluate(rule_t* self, zlist_t* params, const char* iname, const char*
     log_trace("rule_evaluate %s", rule_name(self));
 
     if (!self->lua) {
-        if (!rule_compile(self)) {
+        if (rule_compile(self) != 1) {
             log_error("rule_compile %s failed", rule_name(self));
             return;
         }
@@ -714,8 +762,8 @@ void rule_evaluate(rule_t* self, zlist_t* params, const char* iname, const char*
     lua_settop(self->lua, 0);
     lua_getglobal(self->lua, "main");
 
-    char* value = reinterpret_cast<char*>(zlist_first(params));
     int i = 0;
+    char* value = reinterpret_cast<char*>(zlist_first(params));
     while (value) {
         log_trace("rule_evaluate: push param #%d: %s", i, value);
         lua_pushstring(self->lua, value);
@@ -730,16 +778,12 @@ void rule_evaluate(rule_t* self, zlist_t* params, const char* iname, const char*
         if (lua_isnumber(self->lua, -1)) {
             *result = int(lua_tointeger(self->lua, -1));
             const char* msg = lua_tostring(self->lua, -2);
-            if (msg) {
-                *message = strdup(msg);
-            }
+            *message = msg ? strdup(msg) : nullptr;
         }
         else if (lua_isnumber(self->lua, -2)) {
             *result = int(lua_tointeger(self->lua, -2));
             const char* msg = lua_tostring(self->lua, -1);
-            if (msg) {
-                *message = strdup(msg);
-            }
+            *message = msg ? strdup(msg) : nullptr;
         }
         else {
             log_error("rule_evaluate: invalid content of self->lua.");
@@ -749,33 +793,5 @@ void rule_evaluate(rule_t* self, zlist_t* params, const char* iname, const char*
     }
     else {
         log_error("rule_evaluate: lua_pcall %s failed (r: %d)", rule_name(self), r);
-    }
-}
-
-//  --------------------------------------------------------------------------
-//  Destroy the rule
-
-void rule_destroy(rule_t** self_p)
-{
-    if (self_p && (*self_p)) {
-        rule_t* self = *self_p;
-
-        zstr_free(&self->name);
-        zstr_free(&self->description);
-        zstr_free(&self->logical_asset);
-        zstr_free(&self->evaluation);
-        if (self->lua) {
-            lua_close(self->lua);
-        }
-        zlist_destroy(&self->metrics);
-        zlist_destroy(&self->assets);
-        zlist_destroy(&self->groups);
-        zlist_destroy(&self->models);
-        zlist_destroy(&self->types);
-        zhash_destroy(&self->result_actions);
-        zhashx_destroy(&self->variables);
-
-        free(self);
-        *self_p = nullptr;
     }
 }

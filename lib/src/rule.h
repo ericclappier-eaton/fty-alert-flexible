@@ -91,6 +91,6 @@ int rule_save(rule_t* self, const char* path);
 /// Evaluate rule
 void rule_evaluate(rule_t* self, zlist_t* params, const char* iname, const char* ename, int* result, char** message);
 
-/// ZZZ Returns 1 if ok
+/// CAUTION: Returns 1 if ok
 int rule_compile(rule_t* self);
 
