@@ -43,7 +43,6 @@ TEST_CASE("flexible alert test")
     zstr_sendx(flexible_actor, "CONNECT", MLM_ENDPOINT, ACTOR_ADDRESS, nullptr);
     zstr_sendx(flexible_actor, "PRODUCER", FTY_PROTO_STREAM_ALERTS_SYS, nullptr);
     zstr_sendx(flexible_actor, "CONSUMER", FTY_PROTO_STREAM_ASSETS, ".*", nullptr);
-    // zstr_sendx (flexible_actor, "CONSUMER", FTY_PROTO_STREAM_METRICS, ".*", nullptr);
     zstr_sendx(flexible_actor, "CONSUMER", FTY_PROTO_STREAM_METRICS_SENSOR, ".*", nullptr);
 
     char* rules_dir = nullptr;
