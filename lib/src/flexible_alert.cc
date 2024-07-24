@@ -1296,10 +1296,7 @@ void fty_flexible_alert_actor(zsock_t* pipe, void* args)
                             fty_proto_type(proto), fty_proto_name(proto), address);
 
                         bool populate{false};
-                        if (streq(address, FTY_PROTO_STREAM_LICENSING_ANNOUNCEMENTS)
-                            || streq(address, FTY_PROTO_STREAM_METRICS)
-                        ) {
-                            // messages from FTY_PROTO_STREAM_METRICS are regular metrics
+                        if (streq(address, FTY_PROTO_STREAM_LICENSING_ANNOUNCEMENTS)) {
                             // LICENSING.EXPIRE: bmsg publish licensing-limitation licensing.expire 7 days
                             populate = true;
                         }

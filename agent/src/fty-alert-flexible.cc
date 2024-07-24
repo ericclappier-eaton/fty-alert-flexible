@@ -163,7 +163,6 @@ int main (int argc, char *argv [])
     // server config
     zstr_sendx(server, "CONNECT", endpoint, ACTOR_NAME, NULL);
     zstr_sendx(server, "PRODUCER", FTY_PROTO_STREAM_ALERTS_SYS, NULL);
-    //zstr_sendx(server, "CONSUMER", FTY_PROTO_STREAM_METRICS, metrics_pattern, NULL);
     zstr_sendx(server, "CONSUMER", FTY_PROTO_STREAM_METRICS_SENSOR, "status.*", NULL);
     zstr_sendx(server, "CONSUMER", FTY_PROTO_STREAM_ASSETS, ".*", NULL);
 
