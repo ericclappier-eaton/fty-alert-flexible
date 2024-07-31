@@ -26,6 +26,7 @@
 #include <fty_log.h>
 #include <fty_proto.h>
 #include <fty_shm.h>
+#include "fty_common_agents.h"
 #include <fty_common_json.h>
 #include <cxxtools/jsondeserializer.h>
 #include <malamute.h>
