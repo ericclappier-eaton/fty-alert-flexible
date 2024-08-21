@@ -127,13 +127,13 @@ int main (int argc, char *argv [])
         if (!isArgRules){
             rules_dir = s_zc_get(config, "server/rules", rules_dir);
         }
+        // patterns
+        assets_pattern = s_zc_get(config, "server/assets_pattern", assets_pattern);
+        metrics_pattern = s_zc_get(config, "server/metrics_pattern", metrics_pattern);
         // endpoint
         if (!isArgEndpoint){
             endpoint = s_zc_get(config, "malamute/endpoint", endpoint);
         }
-        // patterns
-        assets_pattern = s_zc_get(config, "malamute/assets_pattern", assets_pattern);
-        metrics_pattern = s_zc_get(config, "malamute/metrics_pattern", metrics_pattern);
     }
     else {
         log_error("%s - Failed to load config file %s", ACTOR_NAME, config_file);
@@ -163,7 +163,6 @@ int main (int argc, char *argv [])
     // server config
     zstr_sendx(server, "CONNECT", endpoint, ACTOR_NAME, NULL);
     zstr_sendx(server, "PRODUCER", FTY_PROTO_STREAM_ALERTS_SYS, NULL);
-    zstr_sendx(server, "CONSUMER", FTY_PROTO_STREAM_METRICS_SENSOR, "status.*", NULL);
     zstr_sendx(server, "CONSUMER", FTY_PROTO_STREAM_ASSETS, ".*", NULL);
 
     // Note: 'licensing.expire.*' pattern don't work ! (nothing appears on stream) BUT IT SHOULD WORK
