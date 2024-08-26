@@ -532,7 +532,7 @@ static void flexible_alert_handle_asset(flexible_alert_t* self, fty_proto_t* pro
         }
 
         if (zlist_size(rules_for_asset) == 0) {
-            log_debug("no rule for %s", assetname);
+            log_trace("no rule for %s", assetname);
             zhash_delete(self->assets, assetname);
             zhash_delete(self->enames, assetname);
             zhash_delete(self->assetInfo, assetname);
@@ -868,7 +868,7 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
         if (!filter.in.empty()) {
             std::string asset{assetFromRuleName(rule_name(rule))};
             asset_info_t* info = reinterpret_cast<asset_info_t*>(zhash_lookup(self->assetInfo, asset.c_str()));
-            log_debug("LIST2 filter.in: %s locations: '%s'", asset.c_str(), asset_info_dumpLocations(info).c_str());
+            //log_trace("LIST2 filter.in: %s locations: '%s'", asset.c_str(), asset_info_dumpLocations(info).c_str());
             if (!asset_info_isInLocations(info, const_cast<char*>(filter.in.c_str())))
                 { return false; }
         }
