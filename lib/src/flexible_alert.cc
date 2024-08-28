@@ -994,6 +994,9 @@ static zmsg_t* flexible_alert_delete_rule(flexible_alert_t* self, const char* na
         char* path = NULL;
         asprintf(&path, "%s/%s.rule", dir, name);
         if (unlink(path) == 0) {
+            // notify as RESOLVED (0) before deletion
+            send_alert(self, rule, rule_asset(rule), 0, "Delete", 30);
+
             log_trace("delete '%s'", path);
             zmsg_addstr(reply, "OK");
             zhash_delete(self->rules, name);
