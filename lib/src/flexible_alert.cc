@@ -287,23 +287,6 @@ static void send_alert(flexible_alert_t* self, rule_t* rule, const char* asset, 
     zstr_free(&topic);
 }
 
-// --------------------------------------------------------------------------
-// returns true if metric belongs to gpi sensor
-static bool is_metric_gpi(fty_proto_t* metric)
-{
-    if (metric) {
-        const char* ext_port = fty_proto_aux_string(metric, "ext-port", NULL);
-        if (ext_port) {
-            return true;
-        }
-        const char* port = fty_proto_aux_string(metric, FTY_PROTO_METRICS_AUX_PORT, "");
-        if (strstr(port, "GPI")) {
-            return true;
-        }
-    }
-    return false;
-}
-
 static std::string auditValue(const std::string& param, const char* value)
 {
     return param + "=" + std::string{value ? value : ""};
@@ -331,7 +314,7 @@ static void evaluate_rule(flexible_alert_t* self, rule_t* rule)
         fty_proto_t* proto = reinterpret_cast<fty_proto_t*>(zhash_lookup(self->metrics, topic));
         if (!proto) {
             // some metrics are missing
-            log_trace("abort evaluation of rule %s because %s metric is missing", rule_name(rule), topic);
+            log_debug("abort evaluation of rule %s because %s metric is missing", rule_name(rule), topic);
 
             isMetricMissing = true;
             auditValues += (auditValues.empty() ? "" : ", ") + auditValue(param, NULL);
@@ -420,20 +403,6 @@ static void populate_metric_in_cache(flexible_alert_t* self, fty_proto_t* proto)
     }
 
     char* quantity = strdup(fty_proto_type(proto));
-
-    // fix quantity for sensors connected to other sensors
-    if (fty_proto_aux_string(proto, "ext-port", NULL)) {
-        // only sensors connected to other sensors have 'ext-port'
-        // quantity example: status.GPI1.1
-        char* p = strchr(quantity, '.'); // locate first '.'
-        if (!p) {
-            log_error("malformed quantity (asset: %s, quantity: %s)", assetname, quantity);
-            zstr_free(&quantity);
-            return;
-        }
-        p = strchr(p + 1, '.'); // locate 2nd '.' (gpi index)
-        if (p) { *p = 0; } // truncate quantity
-    }
 
     for (void* p = zlist_first(rules_for_asset); p; p = zlist_next(rules_for_asset)) {
         const char* rulename = reinterpret_cast<const char*>(p);
@@ -1304,27 +1273,6 @@ void fty_flexible_alert_actor(zsock_t* pipe, void* args)
                         if (streq(address, FTY_PROTO_STREAM_LICENSING_ANNOUNCEMENTS)) {
                             // LICENSING.EXPIRE: bmsg publish licensing-limitation licensing.expire 7 days
                             populate = true;
-                        }
-                        else if (streq(address, FTY_PROTO_STREAM_METRICS_SENSOR)) {
-                            // messages from FTY_PROTO_STREAM_METRICS_SENSORS are gpi sensors
-                            if (is_metric_gpi(proto)) {
-                                // get name of asset based on GPIO port
-                                const char* sensor_sname = fty_proto_aux_string(proto, FTY_PROTO_METRICS_SENSOR_AUX_SNAME, NULL);
-                                if (sensor_sname) {
-                                    if (!zhash_lookup(self->assets, sensor_sname)) {
-                                        log_debug("Ask REPUBLISH for sensor %s", sensor_sname);
-                                        republish_asset(self, {sensor_sname});
-                                    }
-
-                                    // **change** proto name w/ sensor sname
-                                    fty_proto_set_name(proto, "%s", sensor_sname);
-                                    populate = true;
-                                }
-                                else {
-                                    log_warning("No aux '%s' provided for sensor %s",
-                                        FTY_PROTO_METRICS_SENSOR_AUX_SNAME, fty_proto_name(proto));
-                                }
-                            }
                         }
                         else {
                             log_debug("Message FTY_PROTO_METRIC, invalid address ('%s')", address);

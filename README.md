@@ -11,8 +11,8 @@ sudo make install
 
 ## About
 
-This 42ITy agent listen for metrics and produces alerts. Pattern
-subscription about METRICS stream is defined by 'malamute/metrics_pattern'
+This 42ITy agent get metrics from SHM and produces alerts. Pattern
+filter about METRICS is defined by 'server/metrics_pattern'
 key in fty-alert-flexible.cfg configuration file. Rules
 for creating alerts are specified with json and lua. All rule files
 are loaded from one directory specified by command line parameter.
