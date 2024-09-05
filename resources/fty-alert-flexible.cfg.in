@@ -3,9 +3,9 @@
 server
     verbose = 0         #   Do verbose logging of activity?
     rules = @AGENT_VAR_DIR@/rules
-    #metrics_pattern = .*@sensorgpio-.*|.*@sts-.*    # METRICS filter pattern
-    metrics_pattern = .*    # METRICS filter pattern
-    assets_pattern = sensorgpio-.*|sts-.*|ups-.*
+#   metrics_pattern = .*@sensorgpio-.*|.*@sts-.*
+    metrics_pattern = .*
+    assets_pattern = sensorgpio-.*|sts-.*|ups-.*|.*.connector-.*
 
 malamute
-    endpoint = ipc://@/malamute                     # Malamute endpoint
+    endpoint = ipc://@/malamute     # Malamute endpoint
