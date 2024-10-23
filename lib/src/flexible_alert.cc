@@ -796,19 +796,17 @@ static zmsg_t* flexible_alert_list_rules2(flexible_alert_t* self, const std::str
             { "sts-voltage", { T_STS } },
             { "ambient.humidity", { T_HUMIDITY } },
             { "ambient.temperature", { T_TEMPERATURE } },
+            { "humidity.default", { T_HUMIDITY } },
+            { "temperature.default", { T_TEMPERATURE } },
         // enumerated rules (see RULES_1_N)
             { "outlet.group.1.current", { T_OUTPUT_CURRENT } },
             { "outlet.group.1.voltage", { T_OUTPUT_VOLTAGE } },
-            { "ambient.1.humidity.status", { T_HUMIDITY } },
-            { "ambient.1.temperature.status", { T_TEMPERATURE } },
         }; // CAT_TOKENS
 
         // enumerated rules redirections
         static const std::vector<std::pair<std::regex, std::string>> RULES_1_N = {
             { std::regex{R"(outlet\.group\.\d{1,4}\.current)"}, "outlet.group.1.current"},
             { std::regex{R"(outlet\.group\.\d{1,4}\.voltage)"}, "outlet.group.1.voltage"},
-            { std::regex{R"(ambient\.\d{1,4}\.humidity\.status)"}, "ambient.1.humidity.status"},
-            { std::regex{R"(ambient\.\d{1,4}\.temperature\.status)"}, "ambient.1.temperature.status"},
         };
 
         std::string ruleNamePrefix{ruleName};
